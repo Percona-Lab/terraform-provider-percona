@@ -12,6 +12,6 @@ init-dir:
 	terraform init
 
 run:
-	terraform apply
+	export TF_LOG=TRACE && terraform apply -no-color 2>&1
 
 all: setup-dir build init-dir run
