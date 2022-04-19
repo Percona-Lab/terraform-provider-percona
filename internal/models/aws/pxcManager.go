@@ -103,31 +103,26 @@ func (manager *XtraDBClusterManager) CreateCluster() (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(fmt.Sprintf("\t\t\tVPC\n%v\n\n", *vpc))
 
 	internetGateway, err := manager.createInternetGateway(vpc)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(fmt.Sprintf("\t\t\tInternet Gateway\n%v\n\n", *internetGateway))
 
 	securityGroupId, err := manager.createSecurityGroup(vpc, aws.String(SecurityGroupName), aws.String(SecurityGroupDescription))
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(fmt.Sprintf("Security Group Id - %s\n\n", *securityGroupId))
 
 	subnet, err := manager.createSubnet(vpc)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(fmt.Sprintf("\t\t\tSubnet\n%v\n\n", *subnet))
 
-	routeTable, err := manager.createRouteTable(vpc, internetGateway, subnet)
+	_, err = manager.createRouteTable(vpc, internetGateway, subnet)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(fmt.Sprintf("\t\t\tRouteTable\n%v\n\n", *routeTable))
 
 	base64BootstrapData, err := manager.getBase64BoostrapData()
 	if err != nil {
