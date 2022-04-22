@@ -62,6 +62,9 @@ const (
 	ErrorUserDataMsgFailedOpenFile   = "failed open file with user data"
 	ErrorUserDataMsgFileNotExist     = "can't find user data file with proposed path"
 	ErrorUserDataMsgPermissionDenied = "application doesn't have permission to open file with user data"
+
+	ResourceIdLen           = 20
+	ClusterResourcesTagName = "percona-xtradb-cluster-stack-id"
 )
 
 func (c *Config) Valid() bool {
@@ -89,37 +92,37 @@ func NewXtraDBClusterManager(config *Config) (*XtraDBClusterManager, error) {
 	}, nil
 }
 
-func (manager *XtraDBClusterManager) CreateCluster() (interface{}, error) {
+func (manager *XtraDBClusterManager) CreateCluster(resourceId string) (interface{}, error) {
 	//TODO full manager validation
 	if manager.Client == nil {
 		return nil, fmt.Errorf("nil EC2 client")
 	}
 
-	if err := manager.createKeyPair(); err != nil {
+	if err := manager.createKeyPair(resourceId); err != nil {
 		return nil, err
 	}
 
-	vpc, err := manager.createVpc()
+	vpc, err := manager.createVpc(resourceId)
 	if err != nil {
 		return nil, err
 	}
 
-	internetGateway, err := manager.createInternetGateway(vpc)
+	internetGateway, err := manager.createInternetGateway(vpc, resourceId)
 	if err != nil {
 		return nil, err
 	}
 
-	securityGroupId, err := manager.createSecurityGroup(vpc, aws.String(SecurityGroupName), aws.String(SecurityGroupDescription))
+	securityGroupId, err := manager.createSecurityGroup(vpc, aws.String(SecurityGroupName), aws.String(SecurityGroupDescription), resourceId)
 	if err != nil {
 		return nil, err
 	}
 
-	subnet, err := manager.createSubnet(vpc)
+	subnet, err := manager.createSubnet(vpc, resourceId)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = manager.createRouteTable(vpc, internetGateway, subnet)
+	_, err = manager.createRouteTable(vpc, internetGateway, subnet, resourceId)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +149,17 @@ func (manager *XtraDBClusterManager) CreateCluster() (interface{}, error) {
 			},
 			KeyName:  manager.Config.KeyPairName,
 			UserData: base64BootstrapData,
+			TagSpecifications: []*ec2.TagSpecification{
+				{
+					ResourceType: aws.String(ec2.ResourceTypeInstance),
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String(ClusterResourcesTagName),
+							Value: aws.String(resourceId),
+						},
+					},
+				},
+			},
 		})
 		if err != nil {
 			return nil, err
@@ -160,10 +174,11 @@ func (manager *XtraDBClusterManager) CreateCluster() (interface{}, error) {
 		time.Sleep(time.Second * DurationBetweenInstanceRunning)
 		fmt.Println(fmt.Sprintf("Instance[%s] is running", *reservation.Instances[0].InstanceId))
 	}
+
 	return nil, nil
 }
 
-func (manager *XtraDBClusterManager) createKeyPair() error {
+func (manager *XtraDBClusterManager) createKeyPair(resourceId string) error {
 	//TODO add validation
 
 	if val.Str(manager.Config.KeyPairName) == "" {
@@ -173,6 +188,17 @@ func (manager *XtraDBClusterManager) createKeyPair() error {
 	awsKeyPairStoragePath := fmt.Sprintf("%s%s.pem", *manager.Config.PathToKeyPairStorage, *manager.Config.KeyPairName)
 	createKeyPairOutput, err := manager.Client.CreateKeyPair(&ec2.CreateKeyPairInput{
 		KeyName: manager.Config.KeyPairName,
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeKeyPair),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(ClusterResourcesTagName),
+						Value: aws.String(resourceId),
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("error occurred during key pair creating: %w", err)
@@ -189,11 +215,22 @@ func writeKey(fileName string, fileData *string) error {
 	return err
 }
 
-func (manager *XtraDBClusterManager) createVpc() (*ec2.Vpc, error) {
+func (manager *XtraDBClusterManager) createVpc(resourceId string) (*ec2.Vpc, error) {
 	//TODO add validation
 
 	createVpcOutput, err := manager.Client.CreateVpc(&ec2.CreateVpcInput{
 		CidrBlock: aws.String(DefaultVpcCidrBlock),
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeVpc),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(ClusterResourcesTagName),
+						Value: aws.String(resourceId),
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error occurred during Vpc creating: %w", err)
@@ -209,10 +246,22 @@ func (manager *XtraDBClusterManager) createVpc() (*ec2.Vpc, error) {
 	return createVpcOutput.Vpc, nil
 }
 
-func (manager *XtraDBClusterManager) createInternetGateway(vpc *ec2.Vpc) (*ec2.InternetGateway, error) {
+func (manager *XtraDBClusterManager) createInternetGateway(vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
 	//TODO add manager validation
 
-	createInternetGatewayOutput, err := manager.Client.CreateInternetGateway(&ec2.CreateInternetGatewayInput{})
+	createInternetGatewayOutput, err := manager.Client.CreateInternetGateway(&ec2.CreateInternetGatewayInput{
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(ClusterResourcesTagName),
+						Value: aws.String(resourceId),
+					},
+				},
+			},
+		},
+	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			//TODO add errors code cases
@@ -241,13 +290,24 @@ func (manager *XtraDBClusterManager) createInternetGateway(vpc *ec2.Vpc) (*ec2.I
 	return createInternetGatewayOutput.InternetGateway, nil
 }
 
-func (manager *XtraDBClusterManager) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescription *string) (*string, error) {
+func (manager *XtraDBClusterManager) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescription *string, resourceId string) (*string, error) {
 	//TODO add manager validation
 
 	createSecurityGroupResult, err := manager.Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 		GroupName:   groupName,
 		Description: groupDescription,
 		VpcId:       vpc.VpcId,
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeSecurityGroup),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(ClusterResourcesTagName),
+						Value: aws.String(resourceId),
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -291,12 +351,23 @@ func (manager *XtraDBClusterManager) createSecurityGroup(vpc *ec2.Vpc, groupName
 	return createSecurityGroupResult.GroupId, nil
 }
 
-func (manager *XtraDBClusterManager) createSubnet(vpc *ec2.Vpc) (*ec2.Subnet, error) {
+func (manager *XtraDBClusterManager) createSubnet(vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
 	//TODO add manager validation
 
 	createSubnetOutput, err := manager.Client.CreateSubnet(&ec2.CreateSubnetInput{
 		CidrBlock: aws.String(DefaultSubnetCidrBlock),
 		VpcId:     vpc.VpcId,
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeSubnet),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(ClusterResourcesTagName),
+						Value: aws.String(resourceId),
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed create subnet: %w", err)
@@ -305,11 +376,22 @@ func (manager *XtraDBClusterManager) createSubnet(vpc *ec2.Vpc) (*ec2.Subnet, er
 	return createSubnetOutput.Subnet, nil
 }
 
-func (manager *XtraDBClusterManager) createRouteTable(vpc *ec2.Vpc, iGateway *ec2.InternetGateway, subnet *ec2.Subnet) (*ec2.RouteTable, error) {
+func (manager *XtraDBClusterManager) createRouteTable(vpc *ec2.Vpc, iGateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
 	//TODO add manager validation
 
 	createRouteTableOutput, err := manager.Client.CreateRouteTable(&ec2.CreateRouteTableInput{
 		VpcId: vpc.VpcId,
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeRouteTable),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(ClusterResourcesTagName),
+						Value: aws.String(resourceId),
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed create route table: %w", err)

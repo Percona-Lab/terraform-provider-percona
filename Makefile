@@ -14,4 +14,7 @@ init-dir:
 run:
 	export TF_LOG=TRACE && terraform apply -no-color 2>&1
 
+destroy:
+	terraform destroy
+
 all: setup-dir build init-dir run

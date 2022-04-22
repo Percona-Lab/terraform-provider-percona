@@ -7,9 +7,9 @@ Percona Terraform Provider
 - [Go](https://golang.org/doc/install) 1.16.x (to build the provider plugin)
 - [AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) 1 or 2 version
 
-## Warning!
+## Latest update
 
-In this version created resources don't destroyed automatically, you need to do this manually
+ Added ability destroy Percona XtraDB Cluster resources 
 
 ## How to run?
 
