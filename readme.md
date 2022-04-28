@@ -9,7 +9,8 @@ Percona Terraform Provider
 
 ## Latest update
 
- Added ability destroy Percona XtraDB Cluster resources 
+ - Automated AMI substitution for selected regions;
+ - Improvements of error log messages
 
 ## How to run?
 

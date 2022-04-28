@@ -41,7 +41,6 @@ type InstanceSettings struct {
 }
 
 const (
-	Ami                          = "ami"
 	InstanceType                 = "instance_type"
 	MinCount                     = "min_count"
 	MaxCount                     = "max_count"
@@ -73,6 +72,33 @@ func (c *Config) Valid() bool {
 	}
 
 	return c.Region != nil
+}
+
+var MapRegionImage = map[string]string{
+	"us-east-1":      "ami-04505e74c0741db8d",
+	"us-east-2":      "ami-0fb653ca2d3203ac1",
+	"us-west-1":      "ami-01f87c43e618bf8f0",
+	"us-west-2":      "ami-0892d3c7ee96c0bf7",
+	"af-south-1":     "ami-0670428c515903d37",
+	"ap-east-1":      "ami-0350928fdb53ae439",
+	"ap-southeast-3": "ami-0f06496957d1fe04a",
+	"ap-south-1":     "ami-05ba3a39a75be1ec4",
+	"ap-northeast-3": "ami-0c2223049202ca738",
+	"ap-northeast-2": "ami-0225bc2990c54ce9a",
+	"ap-southeast-1": "ami-0750a20e9959e44ff",
+	"ap-southeast-2": "ami-0d539270873f66397",
+	"ap-northeast-1": "ami-0a3eb6ca097b78895",
+	"ca-central-1":   "ami-073c944d45ffb4f27",
+	"eu-central-1":   "ami-02584c1c9d05efa69",
+	"eu-west-1":      "ami-00e7df8df28dfa791",
+	"eu-west-2":      "ami-00826bd51e68b1487",
+	"eu-south-1":     "ami-06ea0ad3f5adc2565",
+	"eu-west-3":      "ami-0a21d1c76ac56fee7",
+	"eu-north-1":     "ami-09f0506c9ef0fb473",
+	"me-south-1":     "ami-05b680b37c7917206",
+	"sa-east-1":      "ami-077518a464c82703b",
+	"us-gov-east-1":  "ami-0eb7ef4cc0594fa04",
+	"us-gov-west-1":  "ami-029a634618d6c0300",
 }
 
 func NewXtraDBClusterManager(config *Config) (*XtraDBClusterManager, error) {
@@ -162,14 +188,22 @@ func (manager *XtraDBClusterManager) CreateCluster(resourceId string) (interface
 			},
 		})
 		if err != nil {
-			return nil, err
+			if aerr, ok := err.(awserr.Error); ok {
+				return nil, errors.New(aerr.Message())
+			} else {
+				return nil, err
+			}
 		}
 
 		if err := manager.Client.WaitUntilInstanceRunning(&ec2.DescribeInstancesInput{
 			InstanceIds: []*string{reservation.Instances[0].InstanceId},
 		}); err != nil {
-			return nil, fmt.Errorf("error occurred while waiting until instance running: InstanceId:%s, Error:%w",
-				*reservation.Instances[0].InstanceId, err)
+			if aerr, ok := err.(awserr.Error); ok {
+				return nil, errors.New(aerr.Message())
+			} else {
+				return nil, fmt.Errorf("error occurred while waiting until instance running: InstanceId:%s, Error:%w",
+					*reservation.Instances[0].InstanceId, err)
+			}
 		}
 		time.Sleep(time.Second * DurationBetweenInstanceRunning)
 		fmt.Println(fmt.Sprintf("Instance[%s] is running", *reservation.Instances[0].InstanceId))
@@ -201,7 +235,11 @@ func (manager *XtraDBClusterManager) createKeyPair(resourceId string) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("error occurred during key pair creating: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return errors.New(aerr.Message())
+		} else {
+			return fmt.Errorf("error occurred during key pair creating: %w", err)
+		}
 	}
 
 	if err := writeKey(awsKeyPairStoragePath, createKeyPairOutput.KeyMaterial); err != nil {
@@ -233,14 +271,22 @@ func (manager *XtraDBClusterManager) createVpc(resourceId string) (*ec2.Vpc, err
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error occurred during Vpc creating: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("error occurred during Vpc creating: %w", err)
+		}
 	}
 
 	if _, err = manager.Client.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
 		EnableDnsHostnames: &ec2.AttributeBooleanValue{Value: aws.Bool(true)},
 		VpcId:              createVpcOutput.Vpc.VpcId,
 	}); err != nil {
-		return nil, fmt.Errorf("failed modify Vpc attribute: VpcId:%s, Error:%w", *createVpcOutput.Vpc.VpcId, err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed modify Vpc attribute: VpcId:%s, Error:%w", *createVpcOutput.Vpc.VpcId, err)
+		}
 	}
 
 	return createVpcOutput.Vpc, nil
@@ -264,13 +310,10 @@ func (manager *XtraDBClusterManager) createInternetGateway(vpc *ec2.Vpc, resourc
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			//TODO add errors code cases
-			switch aerr.Code() {
-			default:
-				return nil, fmt.Errorf("failed create internet gateway: %w", err)
-			}
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed create internet gateway: %w", err)
 		}
-		return nil, fmt.Errorf("failed create internet gateway: %w", err)
 	}
 
 	if _, err = manager.Client.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
@@ -278,13 +321,10 @@ func (manager *XtraDBClusterManager) createInternetGateway(vpc *ec2.Vpc, resourc
 		VpcId:             vpc.VpcId,
 	}); err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			//TODO add errors code cases
-			switch aerr.Code() {
-			default:
-				return nil, fmt.Errorf("failed attach internet gateway to Vpc: VpcId:%s, Error:%w", *vpc.VpcId, err)
-			}
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed attach internet gateway to Vpc: VpcId:%s, Error:%w", *vpc.VpcId, err)
 		}
-		return nil, fmt.Errorf("failed attach internet gateway to Vpc: VpcId:%s, Error:%w", *vpc.VpcId, err)
 	}
 
 	return createInternetGatewayOutput.InternetGateway, nil
@@ -311,14 +351,10 @@ func (manager *XtraDBClusterManager) createSecurityGroup(vpc *ec2.Vpc, groupName
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case "InvalidVpcID.NotFound":
-				return nil, fmt.Errorf("Unable to find VPC with ID %q. ", vpc.VpcId)
-			case "InvalidGroup.Duplicate":
-				return nil, fmt.Errorf("Security group %q already exists. ", *groupName)
-			}
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("Unable to create security group %q, %v ", *groupName, err)
 		}
-		return nil, fmt.Errorf("Unable to create security group %q, %v ", *groupName, err)
 	}
 
 	if _, err = manager.Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
@@ -333,7 +369,11 @@ func (manager *XtraDBClusterManager) createSecurityGroup(vpc *ec2.Vpc, groupName
 				}),
 		},
 	}); err != nil {
-		return nil, fmt.Errorf("failed authorize security group ingress traffic: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed authorize security group ingress traffic: %w", err)
+		}
 	}
 
 	if _, err := manager.Client.AuthorizeSecurityGroupEgress(&ec2.AuthorizeSecurityGroupEgressInput{
@@ -345,7 +385,11 @@ func (manager *XtraDBClusterManager) createSecurityGroup(vpc *ec2.Vpc, groupName
 				SetToPort(-1),
 		},
 	}); err != nil {
-		return nil, fmt.Errorf("failed authorize security group egress traffic: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed authorize security group egress traffic: %w", err)
+		}
 	}
 
 	return createSecurityGroupResult.GroupId, nil
@@ -370,7 +414,11 @@ func (manager *XtraDBClusterManager) createSubnet(vpc *ec2.Vpc, resourceId strin
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed create subnet: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed create subnet: %w", err)
+		}
 	}
 
 	return createSubnetOutput.Subnet, nil
@@ -394,7 +442,11 @@ func (manager *XtraDBClusterManager) createRouteTable(vpc *ec2.Vpc, iGateway *ec
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed create route table: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed create route table: %w", err)
+		}
 	}
 
 	if _, err = manager.Client.CreateRoute(&ec2.CreateRouteInput{
@@ -402,14 +454,22 @@ func (manager *XtraDBClusterManager) createRouteTable(vpc *ec2.Vpc, iGateway *ec
 		GatewayId:            iGateway.InternetGatewayId,
 		RouteTableId:         createRouteTableOutput.RouteTable.RouteTableId,
 	}); err != nil {
-		return nil, fmt.Errorf("failed create route: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed create route: %w", err)
+		}
 	}
 
 	if _, err = manager.Client.AssociateRouteTable(&ec2.AssociateRouteTableInput{
 		RouteTableId: createRouteTableOutput.RouteTable.RouteTableId,
 		SubnetId:     subnet.SubnetId,
 	}); err != nil {
-		return nil, fmt.Errorf("failed associate route table: %w", err)
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("failed associate route table: %w", err)
+		}
 	}
 
 	return createRouteTableOutput.RouteTable, nil

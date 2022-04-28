@@ -24,11 +24,6 @@ func ResourceInstance() *schema.Resource {
 		DeleteContext: resourceInstanceDelete,
 
 		Schema: map[string]*schema.Schema{
-			awsModel.Ami: {
-				Type:         schema.TypeString,
-				Required:     true,
-				InputDefault: "ami-0d527b8c289b4af7f",
-			},
 			awsModel.InstanceType: {
 				Type:         schema.TypeString,
 				Required:     true,
@@ -75,8 +70,12 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 	}
 
 	xtraDBClusterManager := awsController.XtraDBClusterManager
-	if v, ok := data.Get(awsModel.Ami).(string); ok {
-		xtraDBClusterManager.Config.Ami = aws.String(v)
+	if xtraDBClusterManager.Config.Region != nil {
+		if ami, ok := awsModel.MapRegionImage[*xtraDBClusterManager.Config.Region]; ok {
+			xtraDBClusterManager.Config.Ami = aws.String(ami)
+		} else {
+			return diag.FromErr(fmt.Errorf("can't find any AMI for region - %s", *xtraDBClusterManager.Config.Region))
+		}
 	}
 	if v, ok := data.Get(awsModel.InstanceType).(string); ok {
 		xtraDBClusterManager.Config.InstanceType = aws.String(v)
@@ -144,6 +143,19 @@ func resourceInstanceDelete(ctx context.Context, data *schema.ResourceData, meta
 	if err != nil {
 		return diag.FromErr(err)
 	}
+
+	//if sshKeyFile, ok := data.Get(awsModel.KeyPairName).(string); ok {
+	//	if path, ok := data.Get(awsModel.PathToKeyPairStorage).(string); ok {
+	//		sshKeyPath := fmt.Sprintf("%s%s.sh", path, sshKeyFile)
+	//		if _, err := os.Stat(sshKeyPath); err == nil {
+	//			if err := os.Remove(sshKeyPath); err != nil {
+	//				return diag.FromErr(fmt.Errorf("failed delete ssh file: path:%s, error:%w", sshKeyPath, err))
+	//			}
+	//		} else if !errors.Is(err, os.ErrNotExist) {
+	//			return diag.FromErr(fmt.Errorf("failed describe ssh file: path:%s, error:%w", sshKeyPath, err))
+	//		}
+	//	}
+	//}
 
 	var resources []string
 	for _, m := range getResourcesOutput.ResourceTagMappingList {

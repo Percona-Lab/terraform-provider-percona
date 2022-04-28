@@ -4,7 +4,6 @@ provider "percona" {
 }
 
 resource "percona_cluster" "pxc" {
-  ami                      = "ami-092cce4a19b438926"
   instance_type            = "t3.micro"
   path_to_bootstrap_script = "./bootstrap.sh"
   key_pair_name            = "sshKey"
