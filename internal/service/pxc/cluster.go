@@ -59,6 +59,16 @@ func ResourceInstance() *schema.Resource {
 				Optional: true,
 				Default:  1,
 			},
+			awsModel.VolumeType: {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "gp2",
+			},
+			awsModel.VolumeSize: {
+				Type:     schema.TypeInt,
+				Optional: true,
+				Default:  20,
+			},
 		},
 	}
 }
@@ -97,6 +107,12 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 	}
 	if v, ok := data.Get(awsModel.ClusterSize).(int); ok {
 		xtraDBClusterManager.Config.ClusterSize = aws.Int64(int64(v))
+	}
+	if v, ok := data.Get(awsModel.VolumeType).(string); ok {
+		xtraDBClusterManager.Config.VolumeType = aws.String(v)
+	}
+	if v, ok := data.Get(awsModel.VolumeSize).(int); ok {
+		xtraDBClusterManager.Config.VolumeSize = aws.Int64(int64(v))
 	}
 
 	resourceId := utils.GetRandomString(awsModel.ResourceIdLen)

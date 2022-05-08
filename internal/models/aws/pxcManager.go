@@ -38,6 +38,8 @@ type InstanceSettings struct {
 	PathToClusterBoostrapScript *string
 	PathToKeyPairStorage        *string
 	ClusterSize                 *int64
+	VolumeType                  *string
+	VolumeSize                  *int64
 }
 
 const (
@@ -48,6 +50,8 @@ const (
 	PathToClusterBootstrapScript = "path_to_bootstrap_script"
 	PathToKeyPairStorage         = "path_to_key_pair_storage"
 	ClusterSize                  = "cluster_size"
+	VolumeType                   = "volume_type"
+	VolumeSize                   = "volume_size"
 
 	DurationBetweenInstanceRunning = 15 // seconds
 
@@ -171,6 +175,15 @@ func (manager *XtraDBClusterManager) CreateCluster(resourceId string) (interface
 					Groups:                   []*string{securityGroupId},
 					SubnetId:                 subnet.SubnetId,
 					PrivateIpAddress:         aws.String(fmt.Sprintf("10.0.1.%d", i+1)),
+				},
+			},
+			BlockDeviceMappings: []*ec2.BlockDeviceMapping{
+				{
+					DeviceName: aws.String(fmt.Sprintf("/dev/sd%s", string(rune('f'+i)))),
+					Ebs: &ec2.EbsBlockDevice{
+						VolumeType: manager.Config.VolumeType,
+						VolumeSize: manager.Config.VolumeSize,
+					},
 				},
 			},
 			KeyName:  manager.Config.KeyPairName,
