@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/aws/aws-sdk-go v1.41.4
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.10.1
+	github.com/pkg/errors v0.9.1
 )
 
 require (

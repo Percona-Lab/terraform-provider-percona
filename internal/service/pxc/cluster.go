@@ -34,11 +34,6 @@ func ResourceInstance() *schema.Resource {
 				Optional: true,
 				Default:  "pxc",
 			},
-			awsModel.PathToClusterBootstrapScript: {
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "./bootstrap.sh",
-			},
 			awsModel.PathToKeyPairStorage: {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -68,6 +63,14 @@ func ResourceInstance() *schema.Resource {
 				Type:     schema.TypeInt,
 				Optional: true,
 				Default:  20,
+			},
+			awsModel.InstanceProfile: {
+				Type:     schema.TypeString,
+				Required: true,
+			},
+			awsModel.MySQLPassword: {
+				Type:     schema.TypeString,
+				Required: true,
 			},
 		},
 	}
@@ -99,9 +102,6 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 	if v, ok := data.Get(awsModel.KeyPairName).(string); ok {
 		xtraDBClusterManager.Config.KeyPairName = aws.String(v)
 	}
-	if v, ok := data.Get(awsModel.PathToClusterBootstrapScript).(string); ok {
-		xtraDBClusterManager.Config.PathToClusterBoostrapScript = aws.String(v)
-	}
 	if v, ok := data.Get(awsModel.PathToKeyPairStorage).(string); ok {
 		xtraDBClusterManager.Config.PathToKeyPairStorage = aws.String(v)
 	}
@@ -113,6 +113,12 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 	}
 	if v, ok := data.Get(awsModel.VolumeSize).(int); ok {
 		xtraDBClusterManager.Config.VolumeSize = aws.Int64(int64(v))
+	}
+	if v, ok := data.Get(awsModel.InstanceProfile).(string); ok {
+		xtraDBClusterManager.Config.InstanceProfile = aws.String(v)
+	}
+	if v, ok := data.Get(awsModel.MySQLPassword).(string); ok {
+		xtraDBClusterManager.Config.MySQLPassword = aws.String(v)
 	}
 
 	resourceId := utils.GetRandomString(awsModel.ResourceIdLen)

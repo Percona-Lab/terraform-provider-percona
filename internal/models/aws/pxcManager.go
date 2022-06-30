@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"bufio"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -9,10 +8,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"io/ioutil"
 	"os"
+	"terraform-percona/internal/bootstrap/pxc"
 	"terraform-percona/internal/utils/val"
-	"time"
 )
 
 type XtraDBClusterManager struct {
@@ -30,30 +28,30 @@ type Config struct {
 }
 
 type InstanceSettings struct {
-	Ami                         *string
-	InstanceType                *string
-	MinCount                    *int64
-	MaxCount                    *int64
-	KeyPairName                 *string
-	PathToClusterBoostrapScript *string
-	PathToKeyPairStorage        *string
-	ClusterSize                 *int64
-	VolumeType                  *string
-	VolumeSize                  *int64
+	Ami                  *string
+	InstanceType         *string
+	MinCount             *int64
+	MaxCount             *int64
+	KeyPairName          *string
+	InstanceProfile      *string
+	PathToKeyPairStorage *string
+	ClusterSize          *int64
+	VolumeType           *string
+	VolumeSize           *int64
+	MySQLPassword        *string
 }
 
 const (
-	InstanceType                 = "instance_type"
-	MinCount                     = "min_count"
-	MaxCount                     = "max_count"
-	KeyPairName                  = "key_pair_name"
-	PathToClusterBootstrapScript = "path_to_bootstrap_script"
-	PathToKeyPairStorage         = "path_to_key_pair_storage"
-	ClusterSize                  = "cluster_size"
-	VolumeType                   = "volume_type"
-	VolumeSize                   = "volume_size"
-
-	DurationBetweenInstanceRunning = 15 // seconds
+	InstanceType         = "instance_type"
+	MinCount             = "min_count"
+	MaxCount             = "max_count"
+	KeyPairName          = "key_pair_name"
+	PathToKeyPairStorage = "path_to_key_pair_storage"
+	ClusterSize          = "cluster_size"
+	VolumeType           = "volume_type"
+	VolumeSize           = "volume_size"
+	InstanceProfile      = "instance_profile"
+	MySQLPassword        = "password"
 
 	DefaultVpcCidrBlock    = "10.0.0.0/16"
 	DefaultSubnetCidrBlock = "10.0.1.0/16"
@@ -157,13 +155,19 @@ func (manager *XtraDBClusterManager) CreateCluster(resourceId string) (interface
 		return nil, err
 	}
 
-	base64BootstrapData, err := manager.getBase64BoostrapData()
+	userData, err := manager.getBase64UserData()
 	if err != nil {
 		return nil, err
 	}
 
+	instanceIds := make([]*string, 0, *manager.Config.ClusterSize)
+	clusterAddresses := make([]string, 0, *manager.Config.ClusterSize)
+	// TODO: run instances at once
 	for i := int64(0); i < *manager.Config.ClusterSize; i++ {
 		reservation, err := manager.Client.RunInstances(&ec2.RunInstancesInput{
+			IamInstanceProfile: &ec2.IamInstanceProfileSpecification{
+				Name: manager.Config.InstanceProfile,
+			},
 			ImageId:      manager.Config.Ami,
 			InstanceType: manager.Config.InstanceType,
 			MinCount:     manager.Config.MinCount,
@@ -187,7 +191,7 @@ func (manager *XtraDBClusterManager) CreateCluster(resourceId string) (interface
 				},
 			},
 			KeyName:  manager.Config.KeyPairName,
-			UserData: base64BootstrapData,
+			UserData: userData,
 			TagSpecifications: []*ec2.TagSpecification{
 				{
 					ResourceType: aws.String(ec2.ResourceTypeInstance),
@@ -208,20 +212,27 @@ func (manager *XtraDBClusterManager) CreateCluster(resourceId string) (interface
 			}
 		}
 
-		if err := manager.Client.WaitUntilInstanceRunning(&ec2.DescribeInstancesInput{
-			InstanceIds: []*string{reservation.Instances[0].InstanceId},
-		}); err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				return nil, errors.New(aerr.Message())
-			} else {
-				return nil, fmt.Errorf("error occurred while waiting until instance running: InstanceId:%s, Error:%w",
-					*reservation.Instances[0].InstanceId, err)
-			}
-		}
-		time.Sleep(time.Second * DurationBetweenInstanceRunning)
-		fmt.Println(fmt.Sprintf("Instance[%s] is running", *reservation.Instances[0].InstanceId))
+		instanceIds = append(instanceIds, reservation.Instances[0].InstanceId)
+		clusterAddresses = append(clusterAddresses, aws.StringValue(reservation.Instances[0].PrivateIpAddress))
 	}
-
+	if err := manager.Client.WaitUntilInstanceStatusOk(&ec2.DescribeInstanceStatusInput{
+		InstanceIds: instanceIds,
+	}); err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, fmt.Errorf("error occurred while waiting until instances running: InstanceIds:%v, Error:%w",
+				instanceIds, err)
+		}
+	}
+	for i, id := range instanceIds {
+		if err = manager.RunCommand(aws.StringValue(id), pxc.Configure(clusterAddresses, aws.StringValue(manager.Config.MySQLPassword))); err != nil {
+			return nil, err
+		}
+		if err = manager.RunCommand(aws.StringValue(id), pxc.Start(i == 0)); err != nil {
+			return nil, err
+		}
+	}
 	return nil, nil
 }
 
@@ -488,27 +499,7 @@ func (manager *XtraDBClusterManager) createRouteTable(vpc *ec2.Vpc, iGateway *ec
 	return createRouteTableOutput.RouteTable, nil
 }
 
-func (manager *XtraDBClusterManager) getBase64BoostrapData() (*string, error) {
+func (manager *XtraDBClusterManager) getBase64UserData() (*string, error) {
 	//TODO add manager validation
-
-	file, err := os.Open(*manager.Config.PathToClusterBoostrapScript)
-	if err != nil {
-		switch err {
-		case os.ErrNotExist:
-			return nil, errors.New(ErrorUserDataMsgFileNotExist)
-		case os.ErrPermission:
-			return nil, errors.New(ErrorUserDataMsgPermissionDenied)
-		default:
-			return nil, errors.New(ErrorUserDataMsgFailedOpenFile)
-		}
-	}
-	defer file.Close()
-
-	reader := bufio.NewReader(file)
-	content, err := ioutil.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-
-	return aws.String(base64.StdEncoding.EncodeToString(content)), nil
+	return aws.String(base64.StdEncoding.EncodeToString([]byte(pxc.Initial()))), nil
 }

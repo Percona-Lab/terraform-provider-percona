@@ -5,8 +5,9 @@ provider "percona" {
 
 resource "percona_cluster" "pxc" {
   instance_type            = "t3.micro"
-  path_to_bootstrap_script = "./bootstrap.sh"
   key_pair_name            = "sshKey"
+  instance_profile         = "AdemaSSMInstanceProfile"
+  password                 = "password"
   cluster_size             = 3
   min_count                = 1
   max_count                = 1

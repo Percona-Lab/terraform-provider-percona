@@ -35,7 +35,7 @@ provider "percona" {
 resource "percona_cluster" "pxc" {
   ami                      = "ami-092cce4a19b438926"    #required
   instance_type            = "t3.micro"                 #required    
-  path_to_bootstrap_script = "./bootstrap.sh"           #optional
+  password                 = "pass"                     #required
   key_pair_name            = "sshKey"                   #optional
   cluster_size             = 3                          #optional
   path_to_key_pair_storage = "/tmp/"                    #optional
