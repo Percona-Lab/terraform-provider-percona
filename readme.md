@@ -9,8 +9,12 @@ Percona Terraform Provider
 
 ## Latest update
 
- - Automated AMI substitution for selected regions;
- - Improvements of error log messages
+ - Percona Server resource
+ - Replication for Percona Server
+ - Dynamic configuration depending on cluster size
+ - Configurable password
+ - Removed hardcoded ip address
+ - Now it's possible to create multiple resources
 
 ## How to run?
 
@@ -18,9 +22,11 @@ Percona Terraform Provider
 2. Configure AWS CLI - [tutorial](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html)
 3. Switch to project directory
 4. Execute in console `make all` or go through **Makefile**(in the root of project) manually
-5. When cluster is set up, connect to one of instances
-6. Login to mysql with command `sudo mysql -uroot -p` and enter password `pass`(soon make this dynamic)
+5. When cluster is set up, connect to one of the PXC instances
+6. Login to mysql with command `sudo mysql -uroot -p` and enter password `password`
 7. Check cluster status `show status like 'wsrep%';`
+8. Connect to one of the Percona Server replica
+9. Check replication status using `SHOW SLAVE STATUS\G` on replica 
 
 ## Configuration
 
@@ -30,16 +36,29 @@ File **main.tf**
 provider "percona" {
   region  = "eu-north-1"                                #required
   profile = "default"                                   #optional
+  cloud   = "aws"                                       #required, supported values: "aws"
 }
 
-resource "percona_cluster" "pxc" {
-  ami                      = "ami-092cce4a19b438926"    #required
-  instance_type            = "t3.micro"                 #required    
-  password                 = "pass"                     #required
-  key_pair_name            = "sshKey"                   #optional
-  cluster_size             = 3                          #optional
-  path_to_key_pair_storage = "/tmp/"                    #optional
-}   
+resource "percona_ps" "ps" {
+  instance_type            = "t3.micro"         # optional, default: t4g.nano
+  key_pair_name            = "sshKey1"          # required
+  password                 = "password"         # optional, default: "password"
+  replica_password         = "replicaPassword"  # optional, default: "replicaPassword"
+  cluster_size             = 2                  # optional, default: 3
+  path_to_key_pair_storage = "/tmp/"            # optional, default: "."
+  volume_type              = "gp2"              # optional, default: "gp2"
+  volume_size              = 20                 # optional, default: 20
+}
+
+resource "percona_pxc" "pxc" {
+  instance_type            = "t3.micro" # optional, default: t4g.nano
+  key_pair_name            = "sshKey2"  # required
+  password                 = "password"	# optional, default: "password"
+  cluster_size             = 2      	# optional, default: 3
+  path_to_key_pair_storage = "/tmp/"    # optional, default: "."
+  volume_type              = "gp2"      # optional, default: "gp2"
+  volume_size              = 20         # optional, default: 20
+}
 ```
 
 File **version.tf**
@@ -55,7 +74,7 @@ terraform {
 }
 ```
 
-## Required AWS permissions policies in order to create Percona XtraDB Cluster
+## Required AWS permissions policies in order to create Percona XtraDB Cluster or Percona Servers
 
 ```
 //Custome policies set

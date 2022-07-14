@@ -6,7 +6,7 @@ setup-dir:
 	mkdir -p $(PROVIDER_DIR)
 
 build:
-	go build -o terraform-provider-percona && cp terraform-provider-percona $(PROVIDER_DIR)
+	go build -gcflags="all=-N -l" -o terraform-provider-percona && cp terraform-provider-percona $(PROVIDER_DIR)
 
 init-dir:
 	terraform init

@@ -1,4 +1,4 @@
-package pxc
+package ps
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	awsModel "terraform-percona/internal/models/aws"
-	"terraform-percona/internal/models/pxc"
+	"terraform-percona/internal/models/ps"
 	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
 )
@@ -18,11 +18,17 @@ func ResourceInstance() *schema.Resource {
 		ReadContext:   resourceInstanceRead,
 		UpdateContext: resourceInstanceUpdate,
 		DeleteContext: resourceInstanceDelete,
+
 		Schema: utils.MergeSchemas(awsModel.Schema(), map[string]*schema.Schema{
-			pxc.MySQLPassword: {
+			ps.RootPassword: {
 				Type:     schema.TypeString,
 				Optional: true,
 				Default:  "password",
+			},
+			ps.ReplicaPassword: {
+				Type:     schema.TypeString,
+				Optional: true,
+				Default:  "replicaPassword",
 			},
 		}),
 	}
@@ -46,19 +52,23 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
 
-	pass, ok := data.Get(pxc.MySQLPassword).(string)
-	if !ok {
-		return diag.FromErr(errors.New("can't get mysql password"))
-	}
-
 	size, ok := data.Get(awsModel.ClusterSize).(int)
 	if !ok {
 		return diag.FromErr(errors.New("can't get cluster size"))
 	}
 
-	err = pxc.Create(cloud, resourceId, pass, int64(size))
+	pass, ok := data.Get(ps.RootPassword).(string)
+	if !ok {
+		return diag.FromErr(errors.New("can't get mysql password"))
+	}
+
+	replicaPass, ok := data.Get(ps.ReplicaPassword).(string)
+	if !ok {
+		return diag.FromErr(errors.New("can't get mysql password"))
+	}
+	err = ps.Create(cloud, resourceId, int64(size), pass, replicaPass)
 	if err != nil {
-		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
+		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}
 
 	//TODO add creation of terraform resource id

@@ -2,10 +2,12 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	awsModel "terraform-percona/internal/models/aws"
+	"terraform-percona/internal/service/ps"
 	"terraform-percona/internal/service/pxc"
 )
 
@@ -22,26 +24,27 @@ func New() *schema.Provider {
 				Optional: true,
 				Default:  "default",
 			},
+			"cloud": {
+				Type:     schema.TypeString,
+				Required: true,
+			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"percona_cluster": pxc.ResourceInstance(),
+			"percona_pxc": pxc.ResourceInstance(),
+			"percona_ps":  ps.ResourceInstance(),
 		},
 		ConfigureContextFunc: Configure,
 	}
 }
 
 func Configure(_ context.Context, data *schema.ResourceData) (interface{}, diag.Diagnostics) {
-	config := &awsModel.Config{
-		Region:           aws.String(data.Get("region").(string)),
-		Profile:          aws.String(data.Get("profile").(string)),
-		InstanceSettings: &awsModel.InstanceSettings{},
+	cloudOpt := data.Get("cloud").(string)
+	switch cloudOpt {
+	case "aws":
+		return &awsModel.Cloud{
+			Region:  aws.String(data.Get("region").(string)),
+			Profile: aws.String(data.Get("profile").(string)),
+		}, nil
 	}
-
-	xtraDBClusterManager, err := awsModel.NewXtraDBClusterManager(config)
-	if err != nil {
-		return nil, diag.FromErr(err)
-	}
-	return &awsModel.AWSController{
-		XtraDBClusterManager: xtraDBClusterManager,
-	}, nil
+	return nil, diag.FromErr(errors.New("cloud is not supported"))
 }
