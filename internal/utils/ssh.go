@@ -1,4 +1,4 @@
-package aws
+package utils
 
 import (
 	"encoding/pem"
@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-func sshConfig(user string, privateKeyPath string) (*ssh.ClientConfig, error) {
+func SSHConfig(user string, privateKeyPath string) (*ssh.ClientConfig, error) {
 	key, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "read private key")
@@ -40,7 +40,7 @@ func signerFromKey(key []byte) (ssh.Signer, error) {
 	return signer, nil
 }
 
-func runCommand(cmd string, host string, config *ssh.ClientConfig) (string, error) {
+func RunCommand(cmd string, host string, config *ssh.ClientConfig) (string, error) {
 	conn, err := ssh.Dial("tcp", host+":22", config)
 	if err != nil {
 		return "", errors.Wrap(err, "ssh dial")

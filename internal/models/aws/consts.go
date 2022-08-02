@@ -57,7 +57,7 @@ func Schema() map[string]*schema.Schema {
 	return map[string]*schema.Schema{
 		InstanceType: {
 			Type:         schema.TypeString,
-			Required:     true,
+			Optional:     true,
 			InputDefault: "t4g.nano",
 		},
 		KeyPairName: {

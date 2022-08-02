@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	"os"
+	"terraform-percona/internal/utils"
 	"terraform-percona/internal/utils/val"
 )
 
@@ -64,7 +65,7 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		if err != nil {
 			return err
 		}
-		cfg.sshConfig, err = sshConfig("ubuntu", keyPairPath)
+		cfg.sshConfig, err = utils.SSHConfig("ubuntu", keyPairPath)
 		if err != nil {
 			return errors.Wrap(err, "failed create ssh config")
 		}
@@ -145,7 +146,7 @@ func (cloud *Cloud) createKeyPair(resourceId string) error {
 	if err := writeKey(keyPairPath, createKeyPairOutput.KeyMaterial); err != nil {
 		return fmt.Errorf("failed write key pair to file: %w", err)
 	}
-	cfg.sshConfig, err = sshConfig("ubuntu", keyPairPath)
+	cfg.sshConfig, err = utils.SSHConfig("ubuntu", keyPairPath)
 	if err != nil {
 		return errors.Wrap(err, "failed create ssh config")
 	}

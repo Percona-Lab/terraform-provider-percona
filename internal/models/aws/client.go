@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"terraform-percona/internal/service"
+	"terraform-percona/internal/utils"
 )
 
 type Cloud struct {
@@ -37,10 +38,10 @@ type resourceConfig struct {
 
 func (cloud *Cloud) RunCommand(resourceId string, instance service.Instance, cmd string) (string, error) {
 	cfg := cloud.configs[resourceId]
-	return runCommand(cmd, instance.PublicIpAddress, cfg.sshConfig)
+	return utils.RunCommand(cmd, instance.PublicIpAddress, cfg.sshConfig)
 }
 
-func (cloud *Cloud) CreateInstances(resourceId string, size int64, userData *string) ([]service.Instance, error) {
+func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.Instance, error) {
 	instanceIds := make([]*string, 0, size)
 	cfg := cloud.configs[resourceId]
 	for i := int64(0); i < size; i++ {
@@ -66,8 +67,7 @@ func (cloud *Cloud) CreateInstances(resourceId string, size int64, userData *str
 					},
 				},
 			},
-			KeyName:  cfg.keyPair,
-			UserData: userData,
+			KeyName: cfg.keyPair,
 			TagSpecifications: []*ec2.TagSpecification{
 				{
 					ResourceType: aws.String(ec2.ResourceTypeInstance),

@@ -16,5 +16,5 @@ type Cloud interface {
 	CreateInfrastructure(resourceId string) error
 	DeleteInfrastructure(resourceId string) error
 	RunCommand(resourceId string, instance Instance, cmd string) (string, error)
-	CreateInstances(resourceId string, size int64, userData *string) ([]Instance, error)
+	CreateInstances(resourceId string, size int64) ([]Instance, error)
 }

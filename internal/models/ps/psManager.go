@@ -15,12 +15,16 @@ const (
 )
 
 func Create(cloud service.Cloud, resourceId string, size int64, pass, replicaPass string) error {
-	instances, err := cloud.CreateInstances(resourceId, size, getBase64UserData())
+	instances, err := cloud.CreateInstances(resourceId, size)
 	if err != nil {
 		return errors.Wrap(err, "create instances")
 	}
 	binlogName, binlogPos := "", ""
 	for i, instance := range instances {
+		_, err = cloud.RunCommand(resourceId, instance, setup.Initial())
+		if err != nil {
+			return errors.Wrap(err, "run command")
+		}
 		_, err = cloud.RunCommand(resourceId, instance, setup.Configure(pass))
 		if err != nil {
 			return errors.Wrap(err, "run command")

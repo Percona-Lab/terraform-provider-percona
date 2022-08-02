@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	awsModel "terraform-percona/internal/models/aws"
+	"terraform-percona/internal/models/gcp"
 	"terraform-percona/internal/models/ps"
 	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
@@ -19,7 +20,7 @@ func ResourceInstance() *schema.Resource {
 		UpdateContext: resourceInstanceUpdate,
 		DeleteContext: resourceInstanceDelete,
 
-		Schema: utils.MergeSchemas(awsModel.Schema(), map[string]*schema.Schema{
+		Schema: utils.MergeSchemas(awsModel.Schema(), gcp.Schema(), map[string]*schema.Schema{
 			ps.RootPassword: {
 				Type:     schema.TypeString,
 				Optional: true,

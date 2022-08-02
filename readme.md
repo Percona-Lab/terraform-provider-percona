@@ -15,6 +15,7 @@ Percona Terraform Provider
  - Configurable password
  - Removed hardcoded ip address
  - Now it's possible to create multiple resources
+ - Added Google Cloud Platform support
 
 ## How to run?
 
@@ -26,38 +27,54 @@ Percona Terraform Provider
 6. Login to mysql with command `sudo mysql -uroot -p` and enter password `password`
 7. Check cluster status `show status like 'wsrep%';`
 8. Connect to one of the Percona Server replica
-9. Check replication status using `SHOW SLAVE STATUS\G` on replica 
+9. Check replication status using `SHOW SLAVE STATUS\G` on replica
+
+### Run on Google Cloud Platform
+1. Create service account in Google Cloud Console and create key for it (for more info, visit https://cloud.google.com/docs/authentication/getting-started)
+2. Export `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to the file with credentials (e.g. `export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json`)
+3. Execute `make all`
 
 ## Configuration
 
 File **main.tf**
 
 ```
+# AWS provider configuration
 provider "percona" {
   region  = "eu-north-1"                                #required
   profile = "default"                                   #optional
-  cloud   = "aws"                                       #required, supported values: "aws"
+  cloud   = "aws"                                       #required, supported values: "aws", "gcp"
 }
 
+# GCP provider configuration
+#provider "percona" {
+#  region  = "europe-west1"
+#  zone    = "europe-west1-c"
+#  project = "project-name"
+#  cloud =   "gcp"
+#}
+
 resource "percona_ps" "ps" {
-  instance_type            = "t3.micro"         # optional, default: t4g.nano
+  instance_type            = "t3.micro"         # for AWS, optional, default: t4g.nano
+  machine_type             = "e2-micro"         # for GCP, optional, default: e2-micro
   key_pair_name            = "sshKey1"          # required
   password                 = "password"         # optional, default: "password"
   replica_password         = "replicaPassword"  # optional, default: "replicaPassword"
   cluster_size             = 2                  # optional, default: 3
   path_to_key_pair_storage = "/tmp/"            # optional, default: "."
-  volume_type              = "gp2"              # optional, default: "gp2"
-  volume_size              = 20                 # optional, default: 20
+  volume_type              = "gp2"              # for AWS, optional, default: "gp2"
+  volume_size              = 20                 # for AWS, optional, default: 20
 }
 
 resource "percona_pxc" "pxc" {
   instance_type            = "t3.micro" # optional, default: t4g.nano
+  machine_type             = "e2-micro"         # for GCP, optional, default: e2-micro
   key_pair_name            = "sshKey2"  # required
   password                 = "password"	# optional, default: "password"
   cluster_size             = 2      	# optional, default: 3
   path_to_key_pair_storage = "/tmp/"    # optional, default: "."
-  volume_type              = "gp2"      # optional, default: "gp2"
-  volume_size              = 20         # optional, default: 20
+  volume_type              = "gp2"      # for AWS, optional, default: "gp2"
+  volume_size              = 20         # for AWS, optional, default: 20
 }
 ```
 
