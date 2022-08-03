@@ -33,7 +33,10 @@ func Configure(clusterAddress []string, password string) string {
 	:
 	else
 	echo "pxc-encrypt-cluster-traffic=OFF" | sudo -E bash -c 'tee -a $CONFIG_PATH'
-	fi`, password, password, clusterAddrStr)
+	fi
+
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/
+	`, password, password, clusterAddrStr)
 }
 
 func Start(bootstrap bool) string {

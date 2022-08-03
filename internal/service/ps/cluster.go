@@ -3,10 +3,11 @@ package ps
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
-	awsModel "terraform-percona/internal/models/aws"
+	"terraform-percona/internal/models/aws"
 	"terraform-percona/internal/models/gcp"
 	"terraform-percona/internal/models/ps"
 	"terraform-percona/internal/service"
@@ -20,7 +21,7 @@ func ResourceInstance() *schema.Resource {
 		UpdateContext: resourceInstanceUpdate,
 		DeleteContext: resourceInstanceDelete,
 
-		Schema: utils.MergeSchemas(awsModel.Schema(), gcp.Schema(), map[string]*schema.Schema{
+		Schema: utils.MergeSchemas(service.DefaultSchema(), aws.Schema(), gcp.Schema(), map[string]*schema.Schema{
 			ps.RootPassword: {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -35,7 +36,7 @@ func ResourceInstance() *schema.Resource {
 	}
 }
 
-func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	cloud, ok := meta.(service.Cloud)
 	if !ok {
 		return diag.Errorf("nil aws controller")
@@ -53,7 +54,7 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
 
-	size, ok := data.Get(awsModel.ClusterSize).(int)
+	size, ok := data.Get(service.ClusterSize).(int)
 	if !ok {
 		return diag.FromErr(errors.New("can't get cluster size"))
 	}
@@ -67,13 +68,34 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 	if !ok {
 		return diag.FromErr(errors.New("can't get mysql password"))
 	}
-	err = ps.Create(cloud, resourceId, int64(size), pass, replicaPass)
+
+	cfgPath, ok := data.Get(service.ConfigFilePath).(string)
+	if !ok {
+		return diag.FromErr(errors.New("can't get config file path"))
+	}
+	instances, err := ps.Create(ctx, cloud, resourceId, int64(size), pass, replicaPass, cfgPath)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}
 
 	//TODO add creation of terraform resource id
 	data.SetId(resourceId)
+	args := make(map[string]interface{})
+	if size > 1 {
+		for i, instance := range instances {
+			if i == 0 {
+				args[service.LogArgMasterIP] = instance.PublicIpAddress
+				continue
+			}
+			if args[service.LogArgReplicaIP] == nil {
+				args[service.LogArgReplicaIP] = []interface{}{}
+			}
+			args[service.LogArgReplicaIP] = append(args[service.LogArgReplicaIP].([]interface{}), instance.PublicIpAddress)
+		}
+	} else if size == 1 {
+		args[service.LogArgMasterIP] = instances[0].PublicIpAddress
+	}
+	tflog.Info(ctx, "Percona Server resource created", args)
 	return nil
 }
 

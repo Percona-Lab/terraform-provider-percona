@@ -8,7 +8,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
 	"os"
+	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
 	"terraform-percona/internal/utils/val"
 )
@@ -21,15 +23,15 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		cloud.configs[resourceId] = &resourceConfig{}
 	}
 	cfg := cloud.configs[resourceId]
-	if v, ok := data.Get(KeyPairName).(string); ok {
+	if v, ok := data.Get(service.KeyPairName).(string); ok {
 		cfg.keyPair = aws.String(v)
 	}
 
-	if v, ok := data.Get(PathToKeyPairStorage).(string); ok {
+	if v, ok := data.Get(service.PathToKeyPairStorage).(string); ok {
 		cfg.pathToKeyPair = aws.String(v)
 	}
 
-	if v, ok := data.Get(InstanceType).(string); ok {
+	if v, ok := data.Get(service.InstanceType).(string); ok {
 		cfg.instanceType = aws.String(v)
 	}
 
@@ -57,20 +59,6 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		return errors.Wrap(err, "failed create aws session")
 	}
 	cloud.client = ec2.New(cloud.session)
-	keyPairPath, err := cloud.keyPairPath(resourceId)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(keyPairPath); !errors.Is(err, os.ErrNotExist) {
-		if err != nil {
-			return err
-		}
-		cfg.sshConfig, err = utils.SSHConfig("ubuntu", keyPairPath)
-		if err != nil {
-			return errors.Wrap(err, "failed create ssh config")
-		}
-	}
-
 	return nil
 }
 
@@ -119,16 +107,55 @@ func (cloud *Cloud) createKeyPair(resourceId string) error {
 
 	keyPairPath, err := cloud.keyPairPath(resourceId)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to get key pair path")
 	}
-	createKeyPairOutput, err := cloud.client.CreateKeyPair(&ec2.CreateKeyPairInput{
-		KeyName: cfg.keyPair,
+
+	pairs, err := cloud.client.DescribeKeyPairs(&ec2.DescribeKeyPairsInput{
+		KeyNames:         []*string{cfg.keyPair},
+		IncludePublicKey: aws.Bool(true),
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() != "InvalidKeyPair.NotFound" {
+				return errors.Wrap(err, "failed describe key pairs")
+			}
+		} else {
+			return errors.Wrap(err, "failed describe key pairs")
+		}
+	}
+	if _, err = os.Stat(keyPairPath); err != nil {
+		if !os.IsNotExist(err) {
+			return errors.Wrap(err, "failed to check key pair file")
+		}
+		if len(pairs.KeyPairs) > 0 {
+			return errors.New("ssh key pair does not exist locally, but exists in AWS")
+		}
+	}
+	pubKey, err := utils.GetSSHPublicKey(keyPairPath)
+	if err != nil {
+		return errors.Wrap(err, "failed to get public key")
+	}
+	if len(pairs.KeyPairs) > 0 {
+		awsPublicKey := aws.StringValue(pairs.KeyPairs[0].PublicKey)
+		parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(awsPublicKey))
+		if err != nil {
+			return err
+		}
+		cleanKey := string(ssh.MarshalAuthorizedKey(parsedKey))
+		if cleanKey != pubKey {
+			return errors.New("local public key does not match with existing key in AWS")
+		}
+		return nil
+	}
+	_, err = cloud.client.ImportKeyPair(&ec2.ImportKeyPairInput{
+		KeyName:           cfg.keyPair,
+		PublicKeyMaterial: []byte(pubKey),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeKeyPair),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(ClusterResourcesTagName),
+						Key:   aws.String(service.ClusterResourcesTagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -136,26 +163,9 @@ func (cloud *Cloud) createKeyPair(resourceId string) error {
 		},
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return errors.New(aerr.Message())
-		} else {
-			return fmt.Errorf("error occurred during key pair creating: %w", err)
-		}
-	}
-
-	if err := writeKey(keyPairPath, createKeyPairOutput.KeyMaterial); err != nil {
-		return fmt.Errorf("failed write key pair to file: %w", err)
-	}
-	cfg.sshConfig, err = utils.SSHConfig("ubuntu", keyPairPath)
-	if err != nil {
-		return errors.Wrap(err, "failed create ssh config")
+		return errors.Wrap(err, "failed to import key pair")
 	}
 	return nil
-}
-
-func writeKey(fileName string, fileData *string) error {
-	err := os.WriteFile(fileName, []byte(*fileData), 0400)
-	return err
 }
 
 func (cloud *Cloud) createVpc(resourceId string) (*ec2.Vpc, error) {
@@ -168,7 +178,7 @@ func (cloud *Cloud) createVpc(resourceId string) (*ec2.Vpc, error) {
 				ResourceType: aws.String(ec2.ResourceTypeVpc),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(ClusterResourcesTagName),
+						Key:   aws.String(service.ClusterResourcesTagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -206,7 +216,7 @@ func (cloud *Cloud) createInternetGateway(vpc *ec2.Vpc, resourceId string) (*ec2
 				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(ClusterResourcesTagName),
+						Key:   aws.String(service.ClusterResourcesTagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -247,7 +257,7 @@ func (cloud *Cloud) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescriptio
 				ResourceType: aws.String(ec2.ResourceTypeSecurityGroup),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(ClusterResourcesTagName),
+						Key:   aws.String(service.ClusterResourcesTagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -311,7 +321,7 @@ func (cloud *Cloud) createSubnet(vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, 
 				ResourceType: aws.String(ec2.ResourceTypeSubnet),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(ClusterResourcesTagName),
+						Key:   aws.String(service.ClusterResourcesTagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -339,7 +349,7 @@ func (cloud *Cloud) createRouteTable(vpc *ec2.Vpc, iGateway *ec2.InternetGateway
 				ResourceType: aws.String(ec2.ResourceTypeRouteTable),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(ClusterResourcesTagName),
+						Key:   aws.String(service.ClusterResourcesTagName),
 						Value: aws.String(resourceId),
 					},
 				},

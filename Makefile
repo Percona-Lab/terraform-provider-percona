@@ -12,7 +12,7 @@ init-dir:
 	terraform init
 
 run:
-	export TF_LOG=TRACE && terraform apply -no-color 2>&1
+	export TF_LOG=INFO && terraform apply -no-color 2>&1
 
 destroy:
 	terraform destroy

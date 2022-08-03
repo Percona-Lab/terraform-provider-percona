@@ -3,10 +3,11 @@ package pxc
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
-	awsModel "terraform-percona/internal/models/aws"
+	"terraform-percona/internal/models/aws"
 	"terraform-percona/internal/models/gcp"
 	"terraform-percona/internal/models/pxc"
 	"terraform-percona/internal/service"
@@ -19,7 +20,7 @@ func ResourceInstance() *schema.Resource {
 		ReadContext:   resourceInstanceRead,
 		UpdateContext: resourceInstanceUpdate,
 		DeleteContext: resourceInstanceDelete,
-		Schema: utils.MergeSchemas(awsModel.Schema(), gcp.Schema(), map[string]*schema.Schema{
+		Schema: utils.MergeSchemas(service.DefaultSchema(), aws.Schema(), gcp.Schema(), map[string]*schema.Schema{
 			pxc.MySQLPassword: {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -29,7 +30,7 @@ func ResourceInstance() *schema.Resource {
 	}
 }
 
-func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	cloud, ok := meta.(service.Cloud)
 	if !ok {
 		return diag.Errorf("nil aws controller")
@@ -52,18 +53,39 @@ func resourceInitCluster(_ context.Context, data *schema.ResourceData, meta inte
 		return diag.FromErr(errors.New("can't get mysql password"))
 	}
 
-	size, ok := data.Get(awsModel.ClusterSize).(int)
+	size, ok := data.Get(service.ClusterSize).(int)
 	if !ok {
 		return diag.FromErr(errors.New("can't get cluster size"))
 	}
 
-	err = pxc.Create(cloud, resourceId, pass, int64(size))
+	cfgPath, ok := data.Get(service.ConfigFilePath).(string)
+	if !ok {
+		return diag.FromErr(errors.New("can't get config file path"))
+	}
+
+	instances, err := pxc.Create(ctx, cloud, resourceId, pass, int64(size), cfgPath)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
 	}
 
 	//TODO add creation of terraform resource id
 	data.SetId(resourceId)
+	args := make(map[string]interface{})
+	if size > 1 {
+		for i, instance := range instances {
+			if i == 0 {
+				args[service.LogArgMasterIP] = instance.PublicIpAddress
+				continue
+			}
+			if args[service.LogArgReplicaIP] == nil {
+				args[service.LogArgReplicaIP] = []string{}
+			}
+			args[service.LogArgReplicaIP] = append(args[service.LogArgReplicaIP].([]string), instance.PublicIpAddress)
+		}
+	} else if size == 1 {
+		args[service.LogArgMasterIP] = instances[0].PublicIpAddress
+	}
+	tflog.Info(ctx, "Percona XtraDB Cluster resource created", args)
 	return nil
 }
 

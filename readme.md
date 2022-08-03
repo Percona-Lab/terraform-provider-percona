@@ -9,13 +9,12 @@ Percona Terraform Provider
 
 ## Latest update
 
- - Percona Server resource
- - Replication for Percona Server
- - Dynamic configuration depending on cluster size
- - Configurable password
- - Removed hardcoded ip address
- - Now it's possible to create multiple resources
- - Added Google Cloud Platform support
+ - SSH keys are now reusable
+ - Switched to `INFO` logging level in the Makefile
+ - Added logs to the plugin. Now you can see IP addresses of the created instances.
+ - Replaced `machine_type` field with `instance_type` for GCP
+ - Optimized creation of the clusters
+ - Added `config_file_path` field to resources
 
 ## How to run?
 
@@ -55,8 +54,7 @@ provider "percona" {
 #}
 
 resource "percona_ps" "ps" {
-  instance_type            = "t3.micro"         # for AWS, optional, default: t4g.nano
-  machine_type             = "e2-micro"         # for GCP, optional, default: e2-micro
+  instance_type            = "t3.micro"         # required
   key_pair_name            = "sshKey1"          # required
   password                 = "password"         # optional, default: "password"
   replica_password         = "replicaPassword"  # optional, default: "replicaPassword"
@@ -64,17 +62,18 @@ resource "percona_ps" "ps" {
   path_to_key_pair_storage = "/tmp/"            # optional, default: "."
   volume_type              = "gp2"              # for AWS, optional, default: "gp2"
   volume_size              = 20                 # for AWS, optional, default: 20
+  config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
 }
 
 resource "percona_pxc" "pxc" {
-  instance_type            = "t3.micro" # optional, default: t4g.nano
-  machine_type             = "e2-micro"         # for GCP, optional, default: e2-micro
-  key_pair_name            = "sshKey2"  # required
-  password                 = "password"	# optional, default: "password"
-  cluster_size             = 2      	# optional, default: 3
-  path_to_key_pair_storage = "/tmp/"    # optional, default: "."
-  volume_type              = "gp2"      # for AWS, optional, default: "gp2"
-  volume_size              = 20         # for AWS, optional, default: 20
+  instance_type            = "t3.micro"         # required
+  key_pair_name            = "sshKey2"          # required
+  password                 = "password"	        # optional, default: "password"
+  cluster_size             = 2      	        # optional, default: 3
+  path_to_key_pair_storage = "/tmp/"            # optional, default: "."
+  volume_type              = "gp2"              # for AWS, optional, default: "gp2"
+  volume_size              = 20                 # for AWS, optional, default: 20
+  config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
 }
 ```
 

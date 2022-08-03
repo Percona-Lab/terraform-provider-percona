@@ -2,16 +2,10 @@ package gcp
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh"
 	"google.golang.org/api/compute/v1"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -31,10 +25,11 @@ type Cloud struct {
 }
 
 type resourceConfig struct {
-	keyPair       string
-	pathToKeyPair string
-	machineType   string
-	publicKey     string
+	keyPair        string
+	pathToKeyPair  string
+	configFilePath string
+	machineType    string
+	publicKey      string
 }
 
 func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) error {
@@ -45,15 +40,19 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		cloud.configs[resourceId] = &resourceConfig{}
 	}
 	cfg := cloud.configs[resourceId]
-	if v, ok := data.Get(KeyPairName).(string); ok {
+	if v, ok := data.Get(service.KeyPairName).(string); ok {
 		cfg.keyPair = v
 	}
 
-	if v, ok := data.Get(PathToKeyPairStorage).(string); ok {
+	if v, ok := data.Get(service.PathToKeyPairStorage).(string); ok {
 		cfg.pathToKeyPair = v
 	}
 
-	if v, ok := data.Get(MachineType).(string); ok {
+	if v, ok := data.Get(service.ConfigFilePath).(string); ok {
+		cfg.configFilePath = v
+	}
+
+	if v, ok := data.Get(service.InstanceType).(string); ok {
 		cfg.machineType = v
 	}
 
@@ -65,7 +64,6 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 	return nil
 }
 
-//const sourceImage = "projects/ubuntu-os-cloud/global/images/ubuntu-minimal-2204-jammy-v20220712"
 const sourceImage = "projects/ubuntu-os-cloud/global/images/ubuntu-minimal-2004-focal-v20220713"
 
 func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.Instance, error) {
@@ -162,45 +160,11 @@ func (cloud *Cloud) CreateInfrastructure(resourceId string) error {
 		return errors.Wrap(err, "key pair path")
 	}
 	cfg := cloud.configs[resourceId]
-	cfg.publicKey, err = createSSHKey(sshKeyPath)
+	cfg.publicKey, err = utils.GetSSHPublicKey(sshKeyPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to create SSH key")
 	}
 	return nil
-}
-
-func createSSHKey(keyPath string) (string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return "", err
-	}
-
-	err = privateKey.Validate()
-	if err != nil {
-		return "", err
-	}
-
-	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
-
-	privBlock := pem.Block{
-		Type:    "RSA PRIVATE KEY",
-		Headers: nil,
-		Bytes:   privDER,
-	}
-
-	privatePEMbytes := pem.EncodeToMemory(&privBlock)
-
-	publicRsaKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return "", err
-	}
-
-	if err := os.WriteFile(keyPath, privatePEMbytes, 0400); err != nil {
-		return "", err
-	}
-
-	pubKeyBytes := ssh.MarshalAuthorizedKey(publicRsaKey)
-	return string(pubKeyBytes), nil
 }
 
 func (cloud *Cloud) keyPairPath(resourceId string) (string, error) {
@@ -222,6 +186,18 @@ func (cloud *Cloud) RunCommand(resourceId string, instance service.Instance, cmd
 		return "", errors.Wrap(err, "ssh config")
 	}
 	return utils.RunCommand(cmd, instance.PublicIpAddress, sshConfig)
+}
+
+func (cloud *Cloud) SendFile(resourceId, filePath, remotePath string, instance service.Instance) error {
+	sshKeyPath, err := cloud.keyPairPath(resourceId)
+	if err != nil {
+		return errors.Wrap(err, "get key pair path")
+	}
+	sshConfig, err := utils.SSHConfig("ubuntu", sshKeyPath)
+	if err != nil {
+		return errors.Wrap(err, "get ssh config")
+	}
+	return utils.SendFile(filePath, remotePath, instance.PublicIpAddress, sshConfig)
 }
 func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 	list, err := cloud.client.Instances.List(cloud.Project, cloud.Zone).Filter("labels." + ClusterResourcesTagName + ":" + resourceId).Do()

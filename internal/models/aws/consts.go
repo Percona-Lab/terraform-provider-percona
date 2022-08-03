@@ -5,12 +5,8 @@ import (
 )
 
 const (
-	InstanceType         = "instance_type"
-	KeyPairName          = "key_pair_name"
-	PathToKeyPairStorage = "path_to_key_pair_storage"
-	ClusterSize          = "cluster_size"
-	VolumeType           = "volume_type"
-	VolumeSize           = "volume_size"
+	VolumeType = "volume_type"
+	VolumeSize = "volume_size"
 
 	DefaultVpcCidrBlock    = "10.0.0.0/16"
 	DefaultSubnetCidrBlock = "10.0.1.0/16"
@@ -18,12 +14,6 @@ const (
 
 	SecurityGroupName        = "security-group"
 	SecurityGroupDescription = "security-group"
-
-	ErrorUserDataMsgFailedOpenFile   = "failed open file with user data"
-	ErrorUserDataMsgFileNotExist     = "can't find user data file with proposed path"
-	ErrorUserDataMsgPermissionDenied = "application doesn't have permission to open file with user data"
-
-	ClusterResourcesTagName = "percona-cluster-stack-id"
 )
 
 var mapRegionImage = map[string]string{
@@ -55,25 +45,6 @@ var mapRegionImage = map[string]string{
 
 func Schema() map[string]*schema.Schema {
 	return map[string]*schema.Schema{
-		InstanceType: {
-			Type:         schema.TypeString,
-			Optional:     true,
-			InputDefault: "t4g.nano",
-		},
-		KeyPairName: {
-			Type:     schema.TypeString,
-			Required: true,
-		},
-		PathToKeyPairStorage: {
-			Type:     schema.TypeString,
-			Optional: true,
-			Default:  ".",
-		},
-		ClusterSize: {
-			Type:     schema.TypeInt,
-			Optional: true,
-			Default:  3,
-		},
 		VolumeType: {
 			Type:     schema.TypeString,
 			Optional: true,

@@ -28,6 +28,8 @@ func Configure(password string) string {
 	mysql -uroot -p%s -e "CREATE FUNCTION fnv1a_64 RETURNS INTEGER SONAME 'libfnv1a_udf.so'"
 	mysql -uroot -p%s -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'libfnv_udf.so'"
 	mysql -uroot -p%s -e "CREATE FUNCTION murmur_hash RETURNS INTEGER SONAME 'libmurmur_udf.so'"
+
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/
 	`, password, password, password, password, password)
 }
 

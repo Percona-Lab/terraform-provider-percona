@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	"sort"
 	"strings"
+	"terraform-percona/internal/service"
 	"time"
 )
 
@@ -15,7 +16,7 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 	getResourcesOutput, err := resourceGroupingClient.GetResources(&resourcegroupstaggingapi.GetResourcesInput{
 		TagFilters: []*resourcegroupstaggingapi.TagFilter{
 			{
-				Key:    aws.String(ClusterResourcesTagName),
+				Key:    aws.String(service.ClusterResourcesTagName),
 				Values: []*string{aws.String(resourceId)},
 			},
 		},

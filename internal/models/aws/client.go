@@ -7,7 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh"
 	"path"
 	"path/filepath"
 	"terraform-percona/internal/service"
@@ -33,12 +32,30 @@ type resourceConfig struct {
 	instanceType    *string
 	volumeSize      *int64
 	volumeType      *string
-	sshConfig       *ssh.ClientConfig
 }
 
 func (cloud *Cloud) RunCommand(resourceId string, instance service.Instance, cmd string) (string, error) {
-	cfg := cloud.configs[resourceId]
-	return utils.RunCommand(cmd, instance.PublicIpAddress, cfg.sshConfig)
+	sshKeyPath, err := cloud.keyPairPath(resourceId)
+	if err != nil {
+		return "", errors.Wrap(err, "get key pair path")
+	}
+	sshConfig, err := utils.SSHConfig("ubuntu", sshKeyPath)
+	if err != nil {
+		return "", errors.Wrap(err, "get ssh config")
+	}
+	return utils.RunCommand(cmd, instance.PublicIpAddress, sshConfig)
+}
+
+func (cloud *Cloud) SendFile(resourceId, filePath, remotePath string, instance service.Instance) error {
+	sshKeyPath, err := cloud.keyPairPath(resourceId)
+	if err != nil {
+		return errors.Wrap(err, "get key pair path")
+	}
+	sshConfig, err := utils.SSHConfig("ubuntu", sshKeyPath)
+	if err != nil {
+		return errors.Wrap(err, "get ssh config")
+	}
+	return utils.SendFile(filePath, remotePath, instance.PublicIpAddress, sshConfig)
 }
 
 func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.Instance, error) {
@@ -73,7 +90,7 @@ func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.In
 					ResourceType: aws.String(ec2.ResourceTypeInstance),
 					Tags: []*ec2.Tag{
 						{
-							Key:   aws.String(ClusterResourcesTagName),
+							Key:   aws.String(service.ClusterResourcesTagName),
 							Value: aws.String(resourceId),
 						},
 					},

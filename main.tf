@@ -15,7 +15,7 @@ provider "percona" {
 
 resource "percona_ps" "ps" {
   instance_type            = "t3.micro" # for AWS
-  machine_type             = "e2-micro" # for GCP
+#  instance_type             = "e2-micro" # for GCP
   key_pair_name            = "sshKey1"
   password                 = "password"
   replica_password         = "replicaPassword"
@@ -25,7 +25,7 @@ resource "percona_ps" "ps" {
 
 resource "percona_pxc" "pxc" {
   instance_type            = "t3.micro" # for AWS
-  machine_type             = "e2-micro" # for GCP
+#  instance_type             = "e2-micro" # for GCP
   key_pair_name            = "sshKey2"
   password                 = "password"
   cluster_size             = 2
