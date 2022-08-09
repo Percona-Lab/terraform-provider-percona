@@ -73,7 +73,13 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 	if !ok {
 		return diag.FromErr(errors.New("can't get config file path"))
 	}
-	instances, err := ps.Create(ctx, cloud, resourceId, int64(size), pass, replicaPass, cfgPath)
+
+	version, ok := data.Get(service.Version).(string)
+	if !ok {
+		return diag.FromErr(errors.New("can't get version"))
+	}
+
+	instances, err := ps.Create(ctx, cloud, resourceId, int64(size), pass, replicaPass, cfgPath, version)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}

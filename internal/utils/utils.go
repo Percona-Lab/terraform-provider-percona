@@ -2,7 +2,9 @@ package utils
 
 import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"golang.org/x/mod/semver"
 	"math/rand"
+	"strings"
 	"time"
 )
 
@@ -28,4 +30,45 @@ func MergeSchemas(schemas ...map[string]*schema.Schema) map[string]*schema.Schem
 		}
 	}
 	return result
+}
+
+func SelectVersion(availableVersions []string, wantedVersion string) string {
+	if semver.Major("v"+wantedVersion) == "v"+wantedVersion {
+		for _, availableVersion := range availableVersions {
+			availableMajor := semver.Major("v" + availableVersion)
+			wantedMajor := semver.Major("v" + wantedVersion)
+			if semver.Compare(availableMajor, wantedMajor) == 0 {
+				return availableVersion
+			}
+		}
+		return ""
+	}
+
+	if semver.MajorMinor("v"+wantedVersion) == "v"+wantedVersion {
+		for _, availableVersion := range availableVersions {
+			wantedMajorMinor := semver.MajorMinor("v" + wantedVersion)
+			availableMajorMinor := semver.MajorMinor("v" + availableVersion)
+
+			if strings.Compare(wantedMajorMinor, availableMajorMinor) == 0 {
+				return availableVersion
+			}
+		}
+
+		return ""
+	}
+
+	for _, availableVersion := range availableVersions {
+		if wantedVersion == availableVersion {
+			return availableVersion
+		}
+		availableNoRevision := removeDebianRevision(availableVersion)
+		if semver.Compare("v"+wantedVersion, "v"+availableNoRevision) == 0 {
+			return availableVersion
+		}
+	}
+	return ""
+}
+
+func removeDebianRevision(version string) string {
+	return strings.Split(version, "-")[0]
 }

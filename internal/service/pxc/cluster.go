@@ -63,7 +63,12 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 		return diag.FromErr(errors.New("can't get config file path"))
 	}
 
-	instances, err := pxc.Create(ctx, cloud, resourceId, pass, int64(size), cfgPath)
+	version, ok := data.Get(service.Version).(string)
+	if !ok {
+		return diag.FromErr(errors.New("can't get config file path"))
+	}
+
+	instances, err := pxc.Create(ctx, cloud, resourceId, pass, int64(size), cfgPath, version)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
 	}

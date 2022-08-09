@@ -16,6 +16,22 @@ func Start() string {
 	return "sudo systemctl start mysql"
 }
 
+func RetrieveVersions() string {
+	return `apt-cache show percona-server-server | grep 'Version' | sed 's/Version: //'`
+}
+
+func InstallPerconaServer(password, version string) string {
+	return fmt.Sprintf(`
+	#!/usr/bin/env bash
+	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-server-server=%s'
+
+	mysql -uroot -p%s -e "CREATE FUNCTION fnv1a_64 RETURNS INTEGER SONAME 'libfnv1a_udf.so'"
+	mysql -uroot -p%s -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'libfnv_udf.so'"
+	mysql -uroot -p%s -e "CREATE FUNCTION murmur_hash RETURNS INTEGER SONAME 'libmurmur_udf.so'"
+
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/`, version, password, password, password)
+}
+
 func Configure(password string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
@@ -23,14 +39,7 @@ func Configure(password string) string {
 	echo "percona-server-server   percona-server-server/re-root-pass password %s" | sudo debconf-set-selections
 	echo "percona-server-server   percona-server-server/root-pass password %s" | sudo debconf-set-selections
 	echo "percona-server-server   percona-server-server/default-auth-override ${MYSQL_SELECTION_DEFAULT_AUTH_OVERRIDE}" | sudo debconf-set-selections
-	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-server-server'
-
-	mysql -uroot -p%s -e "CREATE FUNCTION fnv1a_64 RETURNS INTEGER SONAME 'libfnv1a_udf.so'"
-	mysql -uroot -p%s -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'libfnv_udf.so'"
-	mysql -uroot -p%s -e "CREATE FUNCTION murmur_hash RETURNS INTEGER SONAME 'libmurmur_udf.so'"
-
-	sudo chown ubuntu /etc/mysql/mysql.conf.d/
-	`, password, password, password, password, password)
+	`, password, password)
 }
 
 func SetupReplication(serverId int, masterIP, rootPassword, replicaPassword, binlogName, binlogPos string) string {

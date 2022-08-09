@@ -1,7 +1,10 @@
 package service
 
 import (
+	"github.com/hashicorp/go-cty/cty"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"golang.org/x/mod/semver"
 	"terraform-percona/internal/utils"
 )
 
@@ -30,6 +33,7 @@ const (
 	ClusterSize          = "cluster_size"
 	ConfigFilePath       = "config_file_path"
 	InstanceType         = "instance_type"
+	Version              = "version"
 )
 
 func DefaultSchema() map[string]*schema.Schema {
@@ -51,16 +55,31 @@ func DefaultSchema() map[string]*schema.Schema {
 		ConfigFilePath: {
 			Type:     schema.TypeString,
 			Optional: true,
-			Default:  "",
 		},
 		InstanceType: {
 			Type:     schema.TypeString,
 			Required: true,
 		},
+		Version: {
+			Type:     schema.TypeString,
+			Optional: true,
+			ValidateDiagFunc: func(v interface{}, path cty.Path) diag.Diagnostics {
+				version := v.(string)
+				if version == "" {
+					return diag.Errorf("empty version provided, use semantic versioning (MAJOR.MINOR.PATCH)")
+				}
+				if !semver.IsValid("v" + version) {
+					return diag.Errorf("invalid version: %s, use semantic versioning (MAJOR.MINOR.PATCH)", version)
+				}
+				return nil
+			},
+		},
 	})
 }
 
 const (
-	LogArgMasterIP  = "percona_master_ip"
-	LogArgReplicaIP = "percona_replica_ip"
+	LogArgMasterIP   = "percona_master_ip"
+	LogArgReplicaIP  = "percona_replica_ip"
+	LogArgVersion    = "percona_version"
+	LogArgInstanceIP = "percona_instance_ip"
 )

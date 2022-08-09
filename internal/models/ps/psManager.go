@@ -8,6 +8,7 @@ import (
 	"strings"
 	"terraform-percona/internal/models/ps/setup"
 	"terraform-percona/internal/service"
+	"terraform-percona/internal/utils"
 )
 
 const (
@@ -15,7 +16,7 @@ const (
 	ReplicaPassword = "replica_password"
 )
 
-func Create(ctx context.Context, cloud service.Cloud, resourceId string, size int64, pass, replicaPass, cfgPath string) ([]service.Instance, error) {
+func Create(ctx context.Context, cloud service.Cloud, resourceId string, size int64, pass, replicaPass, cfgPath, version string) ([]service.Instance, error) {
 	tflog.Info(ctx, "Creating instances")
 	instances, err := cloud.CreateInstances(resourceId, size)
 	if err != nil {
@@ -34,6 +35,27 @@ func Create(ctx context.Context, cloud service.Cloud, resourceId string, size in
 			_, err = cloud.RunCommand(resourceId, instance, setup.Configure(pass))
 			if err != nil {
 				return errors.Wrap(err, "run command")
+			}
+			availableVersions, err := versionList(resourceId, cloud, instance)
+			if err != nil {
+				return errors.Wrap(err, "retrieve versions")
+			}
+			if version != "" {
+				fullVersion := utils.SelectVersion(availableVersions, version)
+				if fullVersion == "" {
+					return errors.Errorf("version not found, available versions: %v", availableVersions)
+				}
+				version = fullVersion
+			} else {
+				version = availableVersions[0]
+			}
+			tflog.Info(ctx, "Installing Percona Server", map[string]interface{}{
+				service.LogArgVersion:    version,
+				service.LogArgInstanceIP: instance.PublicIpAddress,
+			})
+			_, err = cloud.RunCommand(resourceId, instance, setup.InstallPerconaServer(pass, version))
+			if err != nil {
+				return errors.Wrap(err, "install percona server")
 			}
 			if cfgPath != "" {
 				if err = cloud.SendFile(resourceId, cfgPath, "/etc/mysql/mysql.conf.d/custom.cnf", instance); err != nil {
@@ -91,4 +113,16 @@ func currentBinlogAndPosition(resourceId string, cloud service.Cloud, instance s
 		return "", "", errors.New("binlog name or position is empty")
 	}
 	return name, pos, nil
+}
+
+func versionList(resourceId string, cloud service.Cloud, instance service.Instance) ([]string, error) {
+	out, err := cloud.RunCommand(resourceId, instance, setup.RetrieveVersions())
+	if err != nil {
+		return nil, errors.Wrap(err, "retrieve versions")
+	}
+	versions := strings.Split(out, "\n")
+	if len(versions) == 0 {
+		return nil, errors.New("no available versions")
+	}
+	return versions, nil
 }

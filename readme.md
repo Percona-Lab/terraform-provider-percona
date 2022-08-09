@@ -15,6 +15,7 @@ Percona Terraform Provider
  - Replaced `machine_type` field with `instance_type` for GCP
  - Optimized creation of the clusters
  - Added `config_file_path` field to resources
+ - Added `version` field to resources
 
 ## How to run?
 
@@ -63,6 +64,7 @@ resource "percona_ps" "ps" {
   volume_type              = "gp2"              # for AWS, optional, default: "gp2"
   volume_size              = 20                 # for AWS, optional, default: 20
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
+  version                  = "8.0.28"           # optional, installs last version if not specified
 }
 
 resource "percona_pxc" "pxc" {
@@ -74,6 +76,7 @@ resource "percona_pxc" "pxc" {
   volume_type              = "gp2"              # for AWS, optional, default: "gp2"
   volume_size              = 20                 # for AWS, optional, default: 20
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
+  version                  = "8.0.28"           # optional, installs last version if not specified
 }
 ```
 
