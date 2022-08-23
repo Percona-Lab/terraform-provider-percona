@@ -32,6 +32,11 @@ func ResourceInstance() *schema.Resource {
 				Optional: true,
 				Default:  "replicaPassword",
 			},
+			ps.MyRocksInstall: {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
 		}),
 	}
 }
@@ -69,6 +74,11 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 		return diag.FromErr(errors.New("can't get mysql password"))
 	}
 
+	myRocksInstall, ok := data.Get(ps.MyRocksInstall).(bool)
+	if !ok {
+		return diag.FromErr(errors.New("can't get myrocks install"))
+	}
+
 	cfgPath, ok := data.Get(service.ConfigFilePath).(string)
 	if !ok {
 		return diag.FromErr(errors.New("can't get config file path"))
@@ -79,7 +89,7 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 		return diag.FromErr(errors.New("can't get version"))
 	}
 
-	instances, err := ps.Create(ctx, cloud, resourceId, int64(size), pass, replicaPass, cfgPath, version)
+	instances, err := ps.Create(ctx, cloud, resourceId, int64(size), pass, replicaPass, cfgPath, version, myRocksInstall)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}

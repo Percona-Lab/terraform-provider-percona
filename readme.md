@@ -9,13 +9,7 @@ Percona Terraform Provider
 
 ## Latest update
 
- - SSH keys are now reusable
- - Switched to `INFO` logging level in the Makefile
- - Added logs to the plugin. Now you can see IP addresses of the created instances.
- - Replaced `machine_type` field with `instance_type` for GCP
- - Optimized creation of the clusters
- - Added `config_file_path` field to resources
- - Added `version` field to resources
+ - Added `myrocks_install` field to `percona_ps` resource
 
 ## How to run?
 
@@ -65,6 +59,7 @@ resource "percona_ps" "ps" {
   volume_size              = 20                 # for AWS, optional, default: 20
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
+  myrocks_install          = true               # optional, default: false
 }
 
 resource "percona_pxc" "pxc" {

@@ -14,9 +14,10 @@ import (
 const (
 	RootPassword    = "password"
 	ReplicaPassword = "replica_password"
+	MyRocksInstall  = "myrocks_install"
 )
 
-func Create(ctx context.Context, cloud service.Cloud, resourceId string, size int64, pass, replicaPass, cfgPath, version string) ([]service.Instance, error) {
+func Create(ctx context.Context, cloud service.Cloud, resourceId string, size int64, pass, replicaPass, cfgPath, version string, installMyRocks bool) ([]service.Instance, error) {
 	tflog.Info(ctx, "Creating instances")
 	instances, err := cloud.CreateInstances(resourceId, size)
 	if err != nil {
@@ -62,6 +63,12 @@ func Create(ctx context.Context, cloud service.Cloud, resourceId string, size in
 					return errors.Wrap(err, "failed to send config file")
 				}
 			}
+			if installMyRocks {
+				_, err = cloud.RunCommand(resourceId, instance, setup.InstallMyRocks(pass))
+				if err != nil {
+					return errors.Wrap(err, "install myrocks")
+				}
+			}
 			return nil
 		})
 	}
@@ -77,7 +84,7 @@ func Create(ctx context.Context, cloud service.Cloud, resourceId string, size in
 				return nil, errors.Wrap(err, "setup replication")
 			}
 		}
-		_, err = cloud.RunCommand(resourceId, instance, setup.Start())
+		_, err = cloud.RunCommand(resourceId, instance, setup.Restart())
 		if err != nil {
 			return nil, errors.Wrap(err, "run command")
 		}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const mysqlConfigPath = "/etc/mysql/mysql.conf.d/mysqld.cnf"
+
 //go:embed init.sh
 var initial string
 
@@ -12,8 +14,8 @@ func Initial() string {
 	return initial
 }
 
-func Start() string {
-	return "sudo systemctl start mysql"
+func Restart() string {
+	return "sudo systemctl restart mysql"
 }
 
 func RetrieveVersions() string {
@@ -42,13 +44,24 @@ func Configure(password string) string {
 	`, password, password)
 }
 
+// https://docs.percona.com/percona-server/8.0/myrocks/install.html
+func InstallMyRocks(password string) string {
+	return fmt.Sprintf(`
+	#!/usr/bin/env bash
+	sudo apt install percona-server-rocksdb	
+	sudo ps-admin --enable-rocksdb -uroot -p%s
+
+	sudo -E bash -c 'sed -i "$ a default-storage-engine=rocksdb" %s'
+`, password, mysqlConfigPath)
+}
+
 func SetupReplication(serverId int, masterIP, rootPassword, replicaPassword, binlogName, binlogPos string) string {
 	cmd := fmt.Sprintf(`
 	#!/usr/bin/env bash
-	export CONFIG_PATH="/etc/mysql/mysql.conf.d/mysqld.cnf"
+	export CONFIG_PATH="%s"
 	sudo -E bash -c 'sed -i "$ a log_bin = /var/log/mysql/mysql-bin.log" $CONFIG_PATH'
 	sudo -E bash -c 'sed -i "$ a server_id = %d" $CONFIG_PATH'
-`, serverId)
+`, mysqlConfigPath, serverId)
 
 	if serverId == 1 {
 		cmd += fmt.Sprintf(`
