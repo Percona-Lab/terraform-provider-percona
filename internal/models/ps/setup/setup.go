@@ -25,13 +25,13 @@ func RetrieveVersions() string {
 func InstallPerconaServer(password, version string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
-	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-server-server=%s'
+	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-server-client=%s percona-server-common=%s percona-server-server=%s'
 
 	mysql -uroot -p%s -e "CREATE FUNCTION fnv1a_64 RETURNS INTEGER SONAME 'libfnv1a_udf.so'"
 	mysql -uroot -p%s -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'libfnv_udf.so'"
 	mysql -uroot -p%s -e "CREATE FUNCTION murmur_hash RETURNS INTEGER SONAME 'libmurmur_udf.so'"
 
-	sudo chown ubuntu /etc/mysql/mysql.conf.d/`, version, password, password, password)
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/`, version, version, version, password, password, password)
 }
 
 func Configure(password string) string {
@@ -45,14 +45,14 @@ func Configure(password string) string {
 }
 
 // https://docs.percona.com/percona-server/8.0/myrocks/install.html
-func InstallMyRocks(password string) string {
+func InstallMyRocks(password, version string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
-	sudo apt install percona-server-rocksdb	
+	sudo apt-get install -y percona-server-rocksdb=%s
 	sudo ps-admin --enable-rocksdb -uroot -p%s
 
 	sudo -E bash -c 'sed -i "$ a default-storage-engine=rocksdb" %s'
-`, password, mysqlConfigPath)
+`, version, password, mysqlConfigPath)
 }
 
 func SetupReplication(serverId int, masterIP, rootPassword, replicaPassword, binlogName, binlogPos string) string {

@@ -64,7 +64,7 @@ func Create(ctx context.Context, cloud service.Cloud, resourceId string, size in
 				}
 			}
 			if installMyRocks {
-				_, err = cloud.RunCommand(resourceId, instance, setup.InstallMyRocks(pass))
+				_, err = cloud.RunCommand(resourceId, instance, setup.InstallMyRocks(pass, version))
 				if err != nil {
 					return errors.Wrap(err, "install myrocks")
 				}
