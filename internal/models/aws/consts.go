@@ -5,9 +5,6 @@ import (
 )
 
 const (
-	VolumeType = "volume_type"
-	VolumeSize = "volume_size"
-
 	DefaultVpcCidrBlock    = "10.0.0.0/16"
 	DefaultSubnetCidrBlock = "10.0.1.0/16"
 	AllAddressesCidrBlock  = "0.0.0.0/0"
@@ -44,16 +41,5 @@ var mapRegionImage = map[string]string{
 }
 
 func Schema() map[string]*schema.Schema {
-	return map[string]*schema.Schema{
-		VolumeType: {
-			Type:     schema.TypeString,
-			Optional: true,
-			Default:  "gp2",
-		},
-		VolumeSize: {
-			Type:     schema.TypeInt,
-			Optional: true,
-			Default:  20,
-		},
-	}
+	return map[string]*schema.Schema{}
 }

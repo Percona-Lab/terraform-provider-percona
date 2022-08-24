@@ -35,12 +35,18 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		cfg.instanceType = aws.String(v)
 	}
 
-	if v, ok := data.Get(VolumeType).(string); ok {
+	if v, ok := data.Get(service.VolumeType).(string); ok {
 		cfg.volumeType = aws.String(v)
 	}
+	if aws.StringValue(cfg.volumeType) == "" {
+		cfg.volumeType = aws.String("gp2")
+	}
 
-	if v, ok := data.Get(VolumeSize).(int); ok {
+	if v, ok := data.Get(service.VolumeSize).(int); ok {
 		cfg.volumeSize = aws.Int64(int64(v))
+	}
+	if v, ok := data.Get(service.VolumeIOPS).(int); ok {
+		cfg.volumeIOPS = aws.Int64(int64(v))
 	}
 
 	if cloud.Region != nil {

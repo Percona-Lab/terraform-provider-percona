@@ -5,7 +5,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"golang.org/x/mod/semver"
-	"terraform-percona/internal/utils"
 )
 
 const (
@@ -34,10 +33,13 @@ const (
 	ConfigFilePath       = "config_file_path"
 	InstanceType         = "instance_type"
 	Version              = "version"
+	VolumeType           = "volume_type"
+	VolumeSize           = "volume_size"
+	VolumeIOPS           = "volume_iops"
 )
 
 func DefaultSchema() map[string]*schema.Schema {
-	return utils.MergeSchemas(map[string]*schema.Schema{
+	return map[string]*schema.Schema{
 		KeyPairName: {
 			Type:     schema.TypeString,
 			Required: true,
@@ -74,7 +76,20 @@ func DefaultSchema() map[string]*schema.Schema {
 				return nil
 			},
 		},
-	})
+		VolumeType: {
+			Type:     schema.TypeString,
+			Optional: true,
+		},
+		VolumeSize: {
+			Type:     schema.TypeInt,
+			Optional: true,
+			Default:  20,
+		},
+		VolumeIOPS: {
+			Type:     schema.TypeInt,
+			Optional: true,
+		},
+	}
 }
 
 const (

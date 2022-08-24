@@ -32,6 +32,7 @@ type resourceConfig struct {
 	instanceType    *string
 	volumeSize      *int64
 	volumeType      *string
+	volumeIOPS      *int64
 }
 
 func (cloud *Cloud) RunCommand(resourceId string, instance service.Instance, cmd string) (string, error) {
@@ -81,6 +82,7 @@ func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.In
 					Ebs: &ec2.EbsBlockDevice{
 						VolumeType: cfg.volumeType,
 						VolumeSize: cfg.volumeSize,
+						Iops:       cfg.volumeIOPS,
 					},
 				},
 			},

@@ -30,6 +30,9 @@ type resourceConfig struct {
 	configFilePath string
 	machineType    string
 	publicKey      string
+	volumeType     string
+	volumeSize     int64
+	volumeIOPS     int64
 }
 
 func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) error {
@@ -56,6 +59,21 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		cfg.machineType = v
 	}
 
+	if v, ok := data.Get(service.VolumeType).(string); ok {
+		cfg.volumeType = v
+	}
+	if cfg.volumeType == "" {
+		cfg.volumeType = "pd-balanced"
+	}
+
+	if v, ok := data.Get(service.VolumeSize).(int); ok {
+		cfg.volumeSize = int64(v)
+	}
+
+	if v, ok := data.Get(service.VolumeIOPS).(int); ok {
+		cfg.volumeIOPS = int64(v)
+	}
+
 	var err error
 	cloud.client, err = compute.NewService(context.TODO())
 	if err != nil {
@@ -69,7 +87,7 @@ const sourceImage = "projects/ubuntu-os-cloud/global/images/ubuntu-minimal-2004-
 func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.Instance, error) {
 	cfg := cloud.configs[resourceId]
 	publicKey := "ubuntu:" + cfg.publicKey
-	diskType := path.Join("projects", cloud.Project, "zones", cloud.Zone, "diskTypes/pd-balanced")
+	diskType := path.Join("projects", cloud.Project, "zones", cloud.Zone, "diskTypes", cfg.volumeType)
 	subnetwork := path.Join("projects", cloud.Project, "regions", cloud.Region, "subnetworks", "default")
 	machineTypePath := path.Join("projects", cloud.Project, "zones", cloud.Zone, "machineTypes", cfg.machineType)
 
@@ -84,10 +102,13 @@ func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.In
 					Boot:       true,
 					Type:       "PERSISTENT",
 					InitializeParams: &compute.AttachedDiskInitializeParams{
-						DiskName:    name,
-						DiskType:    diskType,
-						SourceImage: sourceImage,
+						DiskName:        name,
+						DiskType:        diskType,
+						DiskSizeGb:      cfg.volumeSize,
+						ProvisionedIops: cfg.volumeIOPS,
+						SourceImage:     sourceImage,
 					},
+					DiskEncryptionKey: new(compute.CustomerEncryptionKey),
 				},
 			},
 			Metadata: &compute.Metadata{

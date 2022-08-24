@@ -10,6 +10,8 @@ Percona Terraform Provider
 ## Latest update
 
  - Added `myrocks_install` field to `percona_ps` resource
+ - Added `volume_type` and `volume_size` fields to GCP resources
+ - Added `volume_iops` field to resources
 
 ## How to run?
 
@@ -55,8 +57,9 @@ resource "percona_ps" "ps" {
   replica_password         = "replicaPassword"  # optional, default: "replicaPassword"
   cluster_size             = 2                  # optional, default: 3
   path_to_key_pair_storage = "/tmp/"            # optional, default: "."
-  volume_type              = "gp2"              # for AWS, optional, default: "gp2"
-  volume_size              = 20                 # for AWS, optional, default: 20
+  volume_type              = "gp2"              # optional, default: "gp2" for AWS, "pd-balanced" for GCP
+  volume_size              = 20                 # optional, default: 20
+  volume_iops              = 4000               # optional
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
   myrocks_install          = true               # optional, default: false
@@ -68,8 +71,9 @@ resource "percona_pxc" "pxc" {
   password                 = "password"	        # optional, default: "password"
   cluster_size             = 2      	        # optional, default: 3
   path_to_key_pair_storage = "/tmp/"            # optional, default: "."
-  volume_type              = "gp2"              # for AWS, optional, default: "gp2"
-  volume_size              = 20                 # for AWS, optional, default: 20
+  volume_type              = "gp2"              # optional, default: "gp2" for AWS, "pd-balanced" for GCP
+  volume_size              = 20                 # optional, default: 20
+  volume_iops              = 4000               # optional
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
 }
