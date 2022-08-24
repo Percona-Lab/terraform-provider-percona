@@ -21,7 +21,7 @@ func InstallPerconaXtraDBCluster(clusterAddress []string, version string) string
 	clusterAddrStr := strings.Join(clusterAddress, ",")
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
-	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-xtradb-cluster-server=1:%s percona-xtradb-cluster-client=1:%s percona-xtradb-cluster=1:%s'
+	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-xtradb-cluster-common=1:%s percona-xtradb-cluster-server=1:%s percona-xtradb-cluster-client=1:%s percona-xtradb-cluster=1:%s'
 
 	export CONFIG_PATH="/etc/mysql/mysql.conf.d/mysqld.cnf"
 	export PRIVATE_NODE_ADDRESS=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
@@ -35,7 +35,7 @@ func InstallPerconaXtraDBCluster(clusterAddress []string, version string) string
 	echo "pxc-encrypt-cluster-traffic=OFF" | sudo -E bash -c 'tee -a $CONFIG_PATH'
 	fi
 
-	sudo chown ubuntu /etc/mysql/mysql.conf.d/`, version, version, version, clusterAddrStr)
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/`, version, version, version, version, clusterAddrStr)
 }
 
 func Configure(password string) string {
@@ -53,4 +53,11 @@ func Start(bootstrap bool) string {
 		return "sudo systemctl start mysql@bootstrap.service"
 	}
 	return "sudo systemctl start mysql"
+}
+
+func Stop(bootstrap bool) string {
+	if bootstrap {
+		return "sudo systemctl stop mysql@bootstrap.service"
+	}
+	return "sudo systemctl stop mysql"
 }

@@ -72,6 +72,15 @@ func Create(ctx context.Context, cloud service.Cloud, resourceId, password strin
 			return nil, errors.Wrap(err, "run command pxc start")
 		}
 	}
+
+	if len(instances) > 1 {
+		if _, err = cloud.RunCommand(resourceId, instances[0], setup.Stop(true)); err != nil {
+			return nil, errors.Wrap(err, "run command bootstrap stop")
+		}
+		if _, err = cloud.RunCommand(resourceId, instances[0], setup.Start(false)); err != nil {
+			return nil, errors.Wrap(err, "run command first node pxc start")
+		}
+	}
 	return instances, nil
 }
 

@@ -76,19 +76,9 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 	//TODO add creation of terraform resource id
 	data.SetId(resourceId)
 	args := make(map[string]interface{})
-	if size > 1 {
-		for i, instance := range instances {
-			if i == 0 {
-				args[service.LogArgMasterIP] = instance.PublicIpAddress
-				continue
-			}
-			if args[service.LogArgReplicaIP] == nil {
-				args[service.LogArgReplicaIP] = []string{}
-			}
-			args[service.LogArgReplicaIP] = append(args[service.LogArgReplicaIP].([]string), instance.PublicIpAddress)
-		}
-	} else if size == 1 {
-		args[service.LogArgMasterIP] = instances[0].PublicIpAddress
+	args[service.LogArgInstanceIP] = []string{}
+	for _, instance := range instances {
+		args[service.LogArgInstanceIP] = append(args[service.LogArgInstanceIP].([]string), instance.PublicIpAddress)
 	}
 	tflog.Info(ctx, "Percona XtraDB Cluster resource created", args)
 	return nil
