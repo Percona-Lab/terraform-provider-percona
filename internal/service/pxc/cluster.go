@@ -7,8 +7,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
-	"terraform-percona/internal/models/aws"
-	"terraform-percona/internal/models/gcp"
+	"terraform-percona/internal/cloud"
+	"terraform-percona/internal/cloud/aws"
+	"terraform-percona/internal/cloud/gcp"
 	"terraform-percona/internal/models/pxc"
 	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
@@ -31,19 +32,19 @@ func ResourceInstance() *schema.Resource {
 }
 
 func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cloud, ok := meta.(service.Cloud)
+	c, ok := meta.(cloud.Cloud)
 	if !ok {
 		return diag.Errorf("nil aws controller")
 	}
 
 	resourceId := utils.GetRandomString(service.ResourceIdLen)
 
-	err := cloud.Configure(resourceId, data)
+	err := c.Configure(ctx, resourceId, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	err = cloud.CreateInfrastructure(resourceId)
+	err = c.CreateInfrastructure(ctx, resourceId)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
@@ -68,12 +69,11 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 		return diag.FromErr(errors.New("can't get config file path"))
 	}
 
-	instances, err := pxc.Create(ctx, cloud, resourceId, pass, int64(size), cfgPath, version)
+	instances, err := pxc.Create(ctx, c, resourceId, pass, int64(size), cfgPath, version)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
 	}
 
-	//TODO add creation of terraform resource id
 	data.SetId(resourceId)
 	args := make(map[string]interface{})
 	args[service.LogArgInstanceIP] = []string{}
@@ -84,18 +84,18 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 	return nil
 }
 
-func resourceInstanceRead(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceInstanceRead(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	//TODO
 	return nil
 }
 
-func resourceInstanceUpdate(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceInstanceUpdate(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	//TODO
 	return nil
 }
 
 func resourceInstanceDelete(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	cloud, ok := meta.(service.Cloud)
+	c, ok := meta.(cloud.Cloud)
 	if !ok {
 		return diag.Errorf("nil aws controller")
 	}
@@ -105,12 +105,12 @@ func resourceInstanceDelete(ctx context.Context, data *schema.ResourceData, meta
 		return diag.FromErr(fmt.Errorf("empty resource id"))
 	}
 
-	err := cloud.Configure(resourceId, data)
+	err := c.Configure(ctx, resourceId, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	err = cloud.DeleteInfrastructure(resourceId)
+	err = c.DeleteInfrastructure(ctx, resourceId)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't delete cloud infrastructure"))
 	}

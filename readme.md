@@ -4,16 +4,9 @@ Percona Terraform Provider
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) 1.1.2
-- [Go](https://golang.org/doc/install) 1.16.x (to build the provider plugin)
+- [Go](https://golang.org/doc/install) 1.18.x (to build the provider plugin)
 - [AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) 1 or 2 version
-
-## Latest update
-
- - Added `myrocks_install` field to `percona_ps` resource
- - Added `volume_type` and `volume_size` fields to GCP resources
- - Added `volume_iops` field to resources
-
-## How to run?
+## How to run on AWS
 
 1. Clone repo
 2. Configure AWS CLI - [tutorial](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html)
@@ -25,7 +18,7 @@ Percona Terraform Provider
 8. Connect to one of the Percona Server replica
 9. Check replication status using `SHOW SLAVE STATUS\G` on replica
 
-### Run on Google Cloud Platform
+## How to run on Google Cloud Platform
 1. Create service account in Google Cloud Console and create key for it (for more info, visit https://cloud.google.com/docs/authentication/getting-started)
 2. Export `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to the file with credentials (e.g. `export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json`)
 3. Execute `make all`
@@ -92,11 +85,13 @@ terraform {
 }
 ```
 
-## Required AWS permissions policies in order to create Percona XtraDB Cluster or Percona Servers
+## Required permissions
+<details>
+<summary>For AWS</summary>
 
 ```
-//Custome policies set
-    {
+//Custom policies set
+{
     "Version": "2012-10-17",
     "Statement": [
         {
@@ -204,7 +199,8 @@ terraform {
 
 ```
 
+</details>
+
 ## NOTE
 
-In different regions **AMI** may differ from each other, even if the system is the same. Also, **instance types**, in
-some regions some may be available, and in others they may not.
+**Instance types**, in some regions some may be available and in others they may not.

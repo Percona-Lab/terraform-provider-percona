@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -9,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"path"
 	"path/filepath"
+	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
 )
@@ -35,8 +37,8 @@ type resourceConfig struct {
 	volumeIOPS      *int64
 }
 
-func (cloud *Cloud) RunCommand(resourceId string, instance service.Instance, cmd string) (string, error) {
-	sshKeyPath, err := cloud.keyPairPath(resourceId)
+func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance cloud.Instance, cmd string) (string, error) {
+	sshKeyPath, err := c.keyPairPath(resourceId)
 	if err != nil {
 		return "", errors.Wrap(err, "get key pair path")
 	}
@@ -44,11 +46,11 @@ func (cloud *Cloud) RunCommand(resourceId string, instance service.Instance, cmd
 	if err != nil {
 		return "", errors.Wrap(err, "get ssh config")
 	}
-	return utils.RunCommand(cmd, instance.PublicIpAddress, sshConfig)
+	return utils.RunCommand(ctx, cmd, instance.PublicIpAddress, sshConfig)
 }
 
-func (cloud *Cloud) SendFile(resourceId, filePath, remotePath string, instance service.Instance) error {
-	sshKeyPath, err := cloud.keyPairPath(resourceId)
+func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath string, instance cloud.Instance) error {
+	sshKeyPath, err := c.keyPairPath(resourceId)
 	if err != nil {
 		return errors.Wrap(err, "get key pair path")
 	}
@@ -56,14 +58,14 @@ func (cloud *Cloud) SendFile(resourceId, filePath, remotePath string, instance s
 	if err != nil {
 		return errors.Wrap(err, "get ssh config")
 	}
-	return utils.SendFile(filePath, remotePath, instance.PublicIpAddress, sshConfig)
+	return utils.SendFile(ctx, filePath, remotePath, instance.PublicIpAddress, sshConfig)
 }
 
-func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.Instance, error) {
+func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
 	instanceIds := make([]*string, 0, size)
-	cfg := cloud.configs[resourceId]
+	cfg := c.configs[resourceId]
 	for i := int64(0); i < size; i++ {
-		reservation, err := cloud.client.RunInstances(&ec2.RunInstancesInput{
+		reservation, err := c.client.RunInstances(&ec2.RunInstancesInput{
 			ImageId:      cfg.ami,
 			InstanceType: cfg.instanceType,
 			MinCount:     aws.Int64(1),
@@ -109,7 +111,7 @@ func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.In
 
 		instanceIds = append(instanceIds, reservation.Instances[0].InstanceId)
 	}
-	if err := cloud.client.WaitUntilInstanceStatusOk(&ec2.DescribeInstanceStatusInput{
+	if err := c.client.WaitUntilInstanceStatusOkWithContext(ctx, &ec2.DescribeInstanceStatusInput{
 		InstanceIds: instanceIds,
 	}); err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -119,20 +121,20 @@ func (cloud *Cloud) CreateInstances(resourceId string, size int64) ([]service.In
 				instanceIds, err)
 		}
 	}
-	instances, err := cloud.listInstances(instanceIds)
+	instances, err := c.listInstances(ctx, instanceIds)
 	if err != nil {
 		return nil, errors.Wrap(err, "list instances")
 	}
 	return instances, nil
 }
 
-func (cloud *Cloud) listInstances(instanceIds []*string) ([]service.Instance, error) {
-	instances := make([]service.Instance, 0, len(instanceIds))
+func (c *Cloud) listInstances(ctx context.Context, instanceIds []*string) ([]cloud.Instance, error) {
+	instances := make([]cloud.Instance, 0, len(instanceIds))
 	in := &ec2.DescribeInstancesInput{
 		InstanceIds: instanceIds,
 	}
 	for i := 0; in.NextToken != nil || i == 0; i++ {
-		describeInstances, err := cloud.client.DescribeInstances(in)
+		describeInstances, err := c.client.DescribeInstancesWithContext(ctx, in)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
 				return nil, errors.New(aerr.Message())
@@ -141,7 +143,7 @@ func (cloud *Cloud) listInstances(instanceIds []*string) ([]service.Instance, er
 		}
 		for _, reservation := range describeInstances.Reservations {
 			for _, instance := range reservation.Instances {
-				instances = append(instances, service.Instance{
+				instances = append(instances, cloud.Instance{
 					PublicIpAddress:  aws.StringValue(instance.PublicIpAddress),
 					PrivateIpAddress: aws.StringValue(instance.PrivateIpAddress),
 				})
@@ -152,8 +154,8 @@ func (cloud *Cloud) listInstances(instanceIds []*string) ([]service.Instance, er
 	return instances, nil
 }
 
-func (cloud *Cloud) keyPairPath(resourceId string) (string, error) {
-	cfg := cloud.configs[resourceId]
+func (c *Cloud) keyPairPath(resourceId string) (string, error) {
+	cfg := c.configs[resourceId]
 	filePath, err := filepath.Abs(path.Join(aws.StringValue(cfg.pathToKeyPair), aws.StringValue(cfg.keyPair)+".pem"))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get absolute key pair path")

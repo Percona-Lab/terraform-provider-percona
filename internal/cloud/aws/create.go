@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -15,14 +16,14 @@ import (
 	"terraform-percona/internal/utils/val"
 )
 
-func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) error {
-	if cloud.configs == nil {
-		cloud.configs = make(map[string]*resourceConfig)
+func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.ResourceData) error {
+	if c.configs == nil {
+		c.configs = make(map[string]*resourceConfig)
 	}
-	if _, ok := cloud.configs[resourceId]; !ok {
-		cloud.configs[resourceId] = &resourceConfig{}
+	if _, ok := c.configs[resourceId]; !ok {
+		c.configs[resourceId] = &resourceConfig{}
 	}
-	cfg := cloud.configs[resourceId]
+	cfg := c.configs[resourceId]
 	if v, ok := data.Get(service.KeyPairName).(string); ok {
 		cfg.keyPair = aws.String(v)
 	}
@@ -46,77 +47,77 @@ func (cloud *Cloud) Configure(resourceId string, data *schema.ResourceData) erro
 		cfg.volumeSize = aws.Int64(int64(v))
 	}
 	if v, ok := data.Get(service.VolumeIOPS).(int); ok {
-		cfg.volumeIOPS = aws.Int64(int64(v))
+		if v != 0 {
+			cfg.volumeIOPS = aws.Int64(int64(v))
+		}
 	}
 
-	if cloud.Region != nil {
-		if ami, ok := mapRegionImage[aws.StringValue(cloud.Region)]; ok {
+	if c.Region != nil {
+		if ami, ok := mapRegionImage[aws.StringValue(c.Region)]; ok {
 			cfg.ami = aws.String(ami)
 		} else {
-			return fmt.Errorf("can't find any AMI for region - %s", *cloud.Region)
+			return fmt.Errorf("can't find any AMI for region - %s", *c.Region)
 		}
 	}
 
 	var err error
-	cloud.session, err = session.NewSession(&aws.Config{
-		Region: cloud.Region,
+	c.session, err = session.NewSession(&aws.Config{
+		Region: c.Region,
 	})
 	if err != nil {
 		return errors.Wrap(err, "failed create aws session")
 	}
-	cloud.client = ec2.New(cloud.session)
+	c.client = ec2.New(c.session)
 	return nil
 }
 
-func (cloud *Cloud) CreateInfrastructure(resourceId string) error {
-	if err := cloud.createKeyPair(resourceId); err != nil {
+func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) error {
+	if err := c.createKeyPair(ctx, resourceId); err != nil {
 		return err
 	}
 
-	vpc, err := cloud.createVpc(resourceId)
+	vpc, err := c.createVpc(ctx, resourceId)
 	if err != nil {
 		return err
 	}
 
-	internetGateway, err := cloud.createInternetGateway(vpc, resourceId)
+	internetGateway, err := c.createInternetGateway(ctx, vpc, resourceId)
 	if err != nil {
 		return err
 	}
 
-	securityGroupId, err := cloud.createSecurityGroup(vpc, aws.String(SecurityGroupName), aws.String(SecurityGroupDescription), resourceId)
+	securityGroupId, err := c.createSecurityGroup(ctx, vpc, aws.String(SecurityGroupName), aws.String(SecurityGroupDescription), resourceId)
 	if err != nil {
 		return err
 	}
 
-	subnet, err := cloud.createSubnet(vpc, resourceId)
+	subnet, err := c.createSubnet(ctx, vpc, resourceId)
 	if err != nil {
 		return err
 	}
 
-	_, err = cloud.createRouteTable(vpc, internetGateway, subnet, resourceId)
+	_, err = c.createRouteTable(ctx, vpc, internetGateway, subnet, resourceId)
 	if err != nil {
 		return err
 	}
 
-	cloud.configs[resourceId].securityGroupID = securityGroupId
-	cloud.configs[resourceId].subnetID = subnet.SubnetId
+	c.configs[resourceId].securityGroupID = securityGroupId
+	c.configs[resourceId].subnetID = subnet.SubnetId
 	return nil
 }
 
-func (cloud *Cloud) createKeyPair(resourceId string) error {
-	//TODO add validation
-
-	cfg := cloud.configs[resourceId]
+func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
+	cfg := c.configs[resourceId]
 	if val.Str(cfg.keyPair) == "" {
 		return fmt.Errorf("cannot create key pair with empty name")
 	}
 
-	keyPairPath, err := cloud.keyPairPath(resourceId)
+	keyPairPath, err := c.keyPairPath(resourceId)
 	if err != nil {
 		return errors.Wrap(err, "failed to get key pair path")
 	}
 
-	pairs, err := cloud.client.DescribeKeyPairs(&ec2.DescribeKeyPairsInput{
+	pairs, err := c.client.DescribeKeyPairsWithContext(ctx, &ec2.DescribeKeyPairsInput{
 		KeyNames:         []*string{cfg.keyPair},
 		IncludePublicKey: aws.Bool(true),
 	})
@@ -153,7 +154,7 @@ func (cloud *Cloud) createKeyPair(resourceId string) error {
 		}
 		return nil
 	}
-	_, err = cloud.client.ImportKeyPair(&ec2.ImportKeyPairInput{
+	_, err = c.client.ImportKeyPairWithContext(ctx, &ec2.ImportKeyPairInput{
 		KeyName:           cfg.keyPair,
 		PublicKeyMaterial: []byte(pubKey),
 		TagSpecifications: []*ec2.TagSpecification{
@@ -174,10 +175,8 @@ func (cloud *Cloud) createKeyPair(resourceId string) error {
 	return nil
 }
 
-func (cloud *Cloud) createVpc(resourceId string) (*ec2.Vpc, error) {
-	//TODO add validation
-
-	createVpcOutput, err := cloud.client.CreateVpc(&ec2.CreateVpcInput{
+func (c *Cloud) createVpc(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
+	createVpcOutput, err := c.client.CreateVpcWithContext(ctx, &ec2.CreateVpcInput{
 		CidrBlock: aws.String(DefaultVpcCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -199,7 +198,7 @@ func (cloud *Cloud) createVpc(resourceId string) (*ec2.Vpc, error) {
 		}
 	}
 
-	if _, err = cloud.client.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
+	if _, err = c.client.ModifyVpcAttributeWithContext(ctx, &ec2.ModifyVpcAttributeInput{
 		EnableDnsHostnames: &ec2.AttributeBooleanValue{Value: aws.Bool(true)},
 		VpcId:              createVpcOutput.Vpc.VpcId,
 	}); err != nil {
@@ -213,10 +212,8 @@ func (cloud *Cloud) createVpc(resourceId string) (*ec2.Vpc, error) {
 	return createVpcOutput.Vpc, nil
 }
 
-func (cloud *Cloud) createInternetGateway(vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
-	//TODO add manager validation
-
-	createInternetGatewayOutput, err := cloud.client.CreateInternetGateway(&ec2.CreateInternetGatewayInput{
+func (c *Cloud) createInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
+	createInternetGatewayOutput, err := c.client.CreateInternetGatewayWithContext(ctx, &ec2.CreateInternetGatewayInput{
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
@@ -237,7 +234,7 @@ func (cloud *Cloud) createInternetGateway(vpc *ec2.Vpc, resourceId string) (*ec2
 		}
 	}
 
-	if _, err = cloud.client.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
+	if _, err = c.client.AttachInternetGatewayWithContext(ctx, &ec2.AttachInternetGatewayInput{
 		InternetGatewayId: createInternetGatewayOutput.InternetGateway.InternetGatewayId,
 		VpcId:             vpc.VpcId,
 	}); err != nil {
@@ -251,10 +248,8 @@ func (cloud *Cloud) createInternetGateway(vpc *ec2.Vpc, resourceId string) (*ec2
 	return createInternetGatewayOutput.InternetGateway, nil
 }
 
-func (cloud *Cloud) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescription *string, resourceId string) (*string, error) {
-	//TODO add manager validation
-
-	createSecurityGroupResult, err := cloud.client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+func (c *Cloud) createSecurityGroup(ctx context.Context, vpc *ec2.Vpc, groupName, groupDescription *string, resourceId string) (*string, error) {
+	createSecurityGroupResult, err := c.client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
 		GroupName:   groupName,
 		Description: groupDescription,
 		VpcId:       vpc.VpcId,
@@ -278,7 +273,7 @@ func (cloud *Cloud) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescriptio
 		}
 	}
 
-	if _, err = cloud.client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+	if _, err = c.client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId: createSecurityGroupResult.GroupId,
 		IpPermissions: []*ec2.IpPermission{
 			(&ec2.IpPermission{}).
@@ -297,7 +292,7 @@ func (cloud *Cloud) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescriptio
 		}
 	}
 
-	if _, err := cloud.client.AuthorizeSecurityGroupEgress(&ec2.AuthorizeSecurityGroupEgressInput{
+	if _, err := c.client.AuthorizeSecurityGroupEgressWithContext(ctx, &ec2.AuthorizeSecurityGroupEgressInput{
 		GroupId: createSecurityGroupResult.GroupId,
 		IpPermissions: []*ec2.IpPermission{
 			(&ec2.IpPermission{}).
@@ -316,10 +311,8 @@ func (cloud *Cloud) createSecurityGroup(vpc *ec2.Vpc, groupName, groupDescriptio
 	return createSecurityGroupResult.GroupId, nil
 }
 
-func (cloud *Cloud) createSubnet(vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
-	//TODO add manager validation
-
-	createSubnetOutput, err := cloud.client.CreateSubnet(&ec2.CreateSubnetInput{
+func (c *Cloud) createSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
+	createSubnetOutput, err := c.client.CreateSubnetWithContext(ctx, &ec2.CreateSubnetInput{
 		CidrBlock: aws.String(DefaultSubnetCidrBlock),
 		VpcId:     vpc.VpcId,
 		TagSpecifications: []*ec2.TagSpecification{
@@ -345,10 +338,8 @@ func (cloud *Cloud) createSubnet(vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, 
 	return createSubnetOutput.Subnet, nil
 }
 
-func (cloud *Cloud) createRouteTable(vpc *ec2.Vpc, iGateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
-	//TODO add manager validation
-
-	createRouteTableOutput, err := cloud.client.CreateRouteTable(&ec2.CreateRouteTableInput{
+func (c *Cloud) createRouteTable(ctx context.Context, vpc *ec2.Vpc, iGateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
+	createRouteTableOutput, err := c.client.CreateRouteTableWithContext(ctx, &ec2.CreateRouteTableInput{
 		VpcId: vpc.VpcId,
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -370,7 +361,7 @@ func (cloud *Cloud) createRouteTable(vpc *ec2.Vpc, iGateway *ec2.InternetGateway
 		}
 	}
 
-	if _, err = cloud.client.CreateRoute(&ec2.CreateRouteInput{
+	if _, err = c.client.CreateRouteWithContext(ctx, &ec2.CreateRouteInput{
 		DestinationCidrBlock: aws.String(AllAddressesCidrBlock),
 		GatewayId:            iGateway.InternetGatewayId,
 		RouteTableId:         createRouteTableOutput.RouteTable.RouteTableId,
@@ -382,7 +373,7 @@ func (cloud *Cloud) createRouteTable(vpc *ec2.Vpc, iGateway *ec2.InternetGateway
 		}
 	}
 
-	if _, err = cloud.client.AssociateRouteTable(&ec2.AssociateRouteTableInput{
+	if _, err = c.client.AssociateRouteTableWithContext(ctx, &ec2.AssociateRouteTableInput{
 		RouteTableId: createRouteTableOutput.RouteTable.RouteTableId,
 		SubnetId:     subnet.SubnetId,
 	}); err != nil {

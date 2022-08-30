@@ -12,20 +12,6 @@ const (
 	ClusterResourcesTagName = "percona-cluster-stack-id"
 )
 
-type Instance struct {
-	PublicIpAddress  string
-	PrivateIpAddress string
-}
-
-type Cloud interface {
-	Configure(resourceId string, data *schema.ResourceData) error
-	CreateInfrastructure(resourceId string) error
-	DeleteInfrastructure(resourceId string) error
-	RunCommand(resourceId string, instance Instance, cmd string) (string, error)
-	SendFile(resourceId, filePath, remotePath string, instance Instance) error
-	CreateInstances(resourceId string, size int64) ([]Instance, error)
-}
-
 const (
 	KeyPairName          = "key_pair_name"
 	PathToKeyPairStorage = "path_to_key_pair_storage"

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -8,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"net"
 	"os"
 )
 
@@ -44,8 +46,8 @@ func signerFromKey(key []byte) (ssh.Signer, error) {
 	return signer, nil
 }
 
-func RunCommand(cmd string, host string, config *ssh.ClientConfig) (string, error) {
-	conn, err := ssh.Dial("tcp", host+":22", config)
+func RunCommand(ctx context.Context, cmd string, host string, config *ssh.ClientConfig) (string, error) {
+	conn, err := sshDialWithContext(ctx, "tcp", host+":22", config)
 	if err != nil {
 		return "", errors.Wrap(err, "ssh dial")
 	}
@@ -62,8 +64,21 @@ func RunCommand(cmd string, host string, config *ssh.ClientConfig) (string, erro
 	return string(output), errors.Wrapf(err, "output %s, cmd %s", string(output), cmd)
 }
 
-func SendFile(srcPath, dstPath, host string, cfg *ssh.ClientConfig) error {
-	conn, err := ssh.Dial("tcp", host+":22", cfg)
+func sshDialWithContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	d := net.Dialer{Timeout: config.Timeout}
+	conn, err := d.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(c, chans, reqs), nil
+}
+
+func SendFile(ctx context.Context, srcPath, dstPath, host string, cfg *ssh.ClientConfig) error {
+	conn, err := sshDialWithContext(ctx, "tcp", host+":22", cfg)
 	if err != nil {
 		return errors.Wrap(err, "ssh dial")
 	}

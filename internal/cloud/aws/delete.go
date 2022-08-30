@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -11,9 +12,9 @@ import (
 	"time"
 )
 
-func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
-	resourceGroupingClient := resourcegroupstaggingapi.New(cloud.session)
-	getResourcesOutput, err := resourceGroupingClient.GetResources(&resourcegroupstaggingapi.GetResourcesInput{
+func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
+	resourceGroupingClient := resourcegroupstaggingapi.New(c.session)
+	getResourcesOutput, err := resourceGroupingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 		TagFilters: []*resourcegroupstaggingapi.TagFilter{
 			{
 				Key:    aws.String(service.ClusterResourcesTagName),
@@ -24,19 +25,6 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 	if err != nil {
 		return err
 	}
-
-	//if sshKeyFile, ok := data.Get(awsModel.KeyPairName).(string); ok {
-	//	if path, ok := data.Get(awsModel.PathToKeyPairStorage).(string); ok {
-	//		sshKeyPath := fmt.Sprintf("%s%s.sh", path, sshKeyFile)
-	//		if _, err := os.Stat(sshKeyPath); err == nil {
-	//			if err := os.Remove(sshKeyPath); err != nil {
-	//				return diag.FromErr(fmt.Errorf("failed delete ssh file: path:%s, error:%w", sshKeyPath, err))
-	//			}
-	//		} else if !errors.Is(err, os.ErrNotExist) {
-	//			return diag.FromErr(fmt.Errorf("failed describe ssh file: path:%s, error:%w", sshKeyPath, err))
-	//		}
-	//	}
-	//}
 
 	var resources []string
 	for _, m := range getResourcesOutput.ResourceTagMappingList {
@@ -96,7 +84,7 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 		resource := strings.Split(v, "/")
 		switch resource[0] {
 		case ec2.ResourceTypeInstance:
-			describeInstanceOutput, err := cloud.client.DescribeInstances(&ec2.DescribeInstancesInput{
+			describeInstanceOutput, err := c.client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
 				InstanceIds: []*string{aws.String(resource[1])},
 			})
 			if err != nil {
@@ -105,20 +93,20 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 			if describeInstanceOutput.Reservations == nil {
 				break
 			}
-			if _, err := cloud.client.TerminateInstances(&ec2.TerminateInstancesInput{
+			if _, err := c.client.TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
 				InstanceIds: []*string{aws.String(resource[1])},
 			}); err != nil {
 				return err
 			}
 			time.Sleep(20 * time.Second)
 		case ec2.ResourceTypeSubnet:
-			if _, err := cloud.client.DeleteSubnet(&ec2.DeleteSubnetInput{
+			if _, err := c.client.DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
 				SubnetId: aws.String(resource[1]),
 			}); err != nil {
 				return err
 			}
 		case ec2.ResourceTypeSecurityGroup:
-			_, err = cloud.client.RevokeSecurityGroupIngress(&ec2.RevokeSecurityGroupIngressInput{
+			_, err = c.client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
 				GroupId: aws.String(resource[1]),
 				IpPermissions: []*ec2.IpPermission{
 					(&ec2.IpPermission{}).
@@ -135,7 +123,7 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 			}
 			time.Sleep(time.Second * 60)
 
-			_, err = cloud.client.RevokeSecurityGroupEgress(&ec2.RevokeSecurityGroupEgressInput{
+			_, err = c.client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
 				GroupId: aws.String(resource[1]),
 				IpPermissions: []*ec2.IpPermission{
 					(&ec2.IpPermission{}).
@@ -149,37 +137,37 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 			}
 			time.Sleep(time.Second * 60)
 
-			if _, err := cloud.client.DeleteSecurityGroup(&ec2.DeleteSecurityGroupInput{
+			if _, err := c.client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 				GroupId: aws.String(resource[1]),
 			}); err != nil {
 				return err
 			}
 		case ec2.ResourceTypeInternetGateway:
-			if _, err = cloud.client.DetachInternetGateway(&ec2.DetachInternetGatewayInput{
+			if _, err = c.client.DetachInternetGatewayWithContext(ctx, &ec2.DetachInternetGatewayInput{
 				InternetGatewayId: aws.String(resource[1]),
 				VpcId:             aws.String(vpcId),
 			}); err != nil {
 				return err
 			}
-			if _, err := cloud.client.DeleteInternetGateway(&ec2.DeleteInternetGatewayInput{
+			if _, err := c.client.DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
 				InternetGatewayId: aws.String(resource[1]),
 			}); err != nil {
 				return err
 			}
 		case ec2.ResourceTypeKeyPair:
-			if _, err := cloud.client.DeleteKeyPair(&ec2.DeleteKeyPairInput{
+			if _, err := c.client.DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
 				KeyPairId: aws.String(resource[1]),
 			}); err != nil {
 				return err
 			}
 		case ec2.ResourceTypeRouteTable:
-			if _, err := cloud.client.DeleteRoute(&ec2.DeleteRouteInput{
+			if _, err := c.client.DeleteRouteWithContext(ctx, &ec2.DeleteRouteInput{
 				DestinationCidrBlock: aws.String(AllAddressesCidrBlock),
 				RouteTableId:         aws.String(resource[1]),
 			}); err != nil {
 				return err
 			}
-			describeRouteTableOutput, err := cloud.client.DescribeRouteTables(&ec2.DescribeRouteTablesInput{
+			describeRouteTableOutput, err := c.client.DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
 				RouteTableIds: []*string{aws.String(resource[1])},
 			})
 			if err != nil {
@@ -187,20 +175,20 @@ func (cloud *Cloud) DeleteInfrastructure(resourceId string) error {
 			}
 			if len(describeRouteTableOutput.RouteTables) > 0 {
 				if len(describeRouteTableOutput.RouteTables[0].Associations) > 0 {
-					if _, err := cloud.client.DisassociateRouteTable(&ec2.DisassociateRouteTableInput{
+					if _, err := c.client.DisassociateRouteTableWithContext(ctx, &ec2.DisassociateRouteTableInput{
 						AssociationId: describeRouteTableOutput.RouteTables[0].Associations[0].RouteTableAssociationId,
 					}); err != nil {
 						return err
 					}
 				}
 			}
-			if _, err := cloud.client.DeleteRouteTable(&ec2.DeleteRouteTableInput{
+			if _, err := c.client.DeleteRouteTableWithContext(ctx, &ec2.DeleteRouteTableInput{
 				RouteTableId: aws.String(resource[1]),
 			}); err != nil {
 				return err
 			}
 		case ec2.ResourceTypeVpc:
-			if _, err := cloud.client.DeleteVpc(&ec2.DeleteVpcInput{
+			if _, err := c.client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
 				VpcId: aws.String(resource[1]),
 			}); err != nil {
 				return err

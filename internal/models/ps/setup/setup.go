@@ -7,11 +7,18 @@ import (
 
 const mysqlConfigPath = "/etc/mysql/mysql.conf.d/mysqld.cnf"
 
-//go:embed init.sh
-var initial string
-
 func Initial() string {
-	return initial
+	return `#!/usr/bin/env bash
+		sudo apt-get update
+		sudo apt-get install -y gnupg2 curl
+		sudo apt-get install -y debconf-utils
+		sudo apt-get install -y net-tools
+
+		wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb
+		sudo dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
+
+		sudo apt-get update
+		sudo percona-release setup ps80`
 }
 
 func Restart() string {
@@ -44,7 +51,6 @@ func Configure(password string) string {
 	`, password, password)
 }
 
-// https://docs.percona.com/percona-server/8.0/myrocks/install.html
 func InstallMyRocks(password, version string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
