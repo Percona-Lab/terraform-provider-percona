@@ -2,7 +2,6 @@ package aws
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -26,39 +25,26 @@ func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.Res
 		c.configs[resourceId] = &resourceConfig{}
 	}
 	cfg := c.configs[resourceId]
-	if v, ok := data.Get(service.KeyPairName).(string); ok {
-		cfg.keyPair = aws.String(v)
-	}
-
-	if v, ok := data.Get(service.PathToKeyPairStorage).(string); ok {
-		cfg.pathToKeyPair = aws.String(v)
-	}
-
-	if v, ok := data.Get(service.InstanceType).(string); ok {
-		cfg.instanceType = aws.String(v)
-	}
-
-	if v, ok := data.Get(service.VolumeType).(string); ok {
-		cfg.volumeType = aws.String(v)
-	}
+	cfg.keyPair = aws.String(data.Get(service.KeyPairName).(string))
+	cfg.pathToKeyPair = aws.String(data.Get(service.PathToKeyPairStorage).(string))
+	cfg.instanceType = aws.String(data.Get(service.InstanceType).(string))
+	cfg.volumeType = aws.String(data.Get(service.VolumeType).(string))
 	if aws.StringValue(cfg.volumeType) == "" {
 		cfg.volumeType = aws.String("gp2")
 	}
-
-	if v, ok := data.Get(service.VolumeSize).(int); ok {
-		cfg.volumeSize = aws.Int64(int64(v))
-	}
+	cfg.volumeSize = aws.Int64(int64(data.Get(service.VolumeSize).(int)))
 	if v, ok := data.Get(service.VolumeIOPS).(int); ok {
 		if v != 0 {
 			cfg.volumeIOPS = aws.Int64(int64(v))
 		}
 	}
+	cfg.vpcName = aws.String(data.Get(service.VPCName).(string))
 
 	if c.Region != nil {
 		if ami, ok := mapRegionImage[aws.StringValue(c.Region)]; ok {
 			cfg.ami = aws.String(ami)
 		} else {
-			return fmt.Errorf("can't find any AMI for region - %s", *c.Region)
+			return errors.Errorf("can't find any AMI for region %s", aws.StringValue(c.Region))
 		}
 	}
 
@@ -78,27 +64,27 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) err
 		return err
 	}
 
-	vpc, err := c.createVpc(ctx, resourceId)
+	vpc, err := c.createOrGetVPC(ctx, resourceId)
 	if err != nil {
 		return err
 	}
 
-	internetGateway, err := c.createInternetGateway(ctx, vpc, resourceId)
+	internetGateway, err := c.createOrGetInternetGateway(ctx, vpc, resourceId)
 	if err != nil {
 		return err
 	}
 
-	securityGroupId, err := c.createSecurityGroup(ctx, vpc, aws.String(SecurityGroupName), aws.String(SecurityGroupDescription), resourceId)
+	securityGroupId, err := c.createOrGetSecurityGroup(ctx, vpc, resourceId)
 	if err != nil {
 		return err
 	}
 
-	subnet, err := c.createSubnet(ctx, vpc, resourceId)
+	subnet, err := c.createOrGetSubnet(ctx, vpc, resourceId)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.createRouteTable(ctx, vpc, internetGateway, subnet, resourceId)
+	_, err = c.createOrGetRouteTable(ctx, vpc, internetGateway, subnet, resourceId)
 	if err != nil {
 		return err
 	}
@@ -111,7 +97,7 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) err
 func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 	cfg := c.configs[resourceId]
 	if val.Str(cfg.keyPair) == "" {
-		return fmt.Errorf("cannot create key pair with empty name")
+		return errors.New("cannot create key pair with empty name")
 	}
 
 	keyPairPath, err := c.keyPairPath(resourceId)
@@ -177,8 +163,24 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 	return nil
 }
 
-func (c *Cloud) createVpc(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
-	createVpcOutput, err := c.client.CreateVpcWithContext(ctx, &ec2.CreateVpcInput{
+func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
+	cfg := c.configs[resourceId]
+	name := aws.StringValue(cfg.vpcName)
+	if name != "" {
+		out, err := c.client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
+			Filters: []*ec2.Filter{{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(name)},
+			}},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "describe vpc")
+		}
+		if len(out.Vpcs) > 0 {
+			return out.Vpcs[0], nil
+		}
+	}
+	in := &ec2.CreateVpcInput{
 		CidrBlock: aws.String(service.DefaultVpcCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -191,31 +193,48 @@ func (c *Cloud) createVpc(ctx context.Context, resourceId string) (*ec2.Vpc, err
 				},
 			},
 		},
-	})
+	}
+	if name != "" {
+		in.TagSpecifications[0].Tags = append(in.TagSpecifications[0].Tags, &ec2.Tag{
+			Key:   aws.String("Name"),
+			Value: aws.String(name),
+		})
+	}
+
+	createVpcOutput, err := c.client.CreateVpcWithContext(ctx, in)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("error occurred during Vpc creating: %w", err)
-		}
+		return nil, errors.Wrap(err, "error occurred during vpc creating")
 	}
 
 	if _, err = c.client.ModifyVpcAttributeWithContext(ctx, &ec2.ModifyVpcAttributeInput{
 		EnableDnsHostnames: &ec2.AttributeBooleanValue{Value: aws.Bool(true)},
 		VpcId:              createVpcOutput.Vpc.VpcId,
 	}); err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed modify Vpc attribute: VpcId:%s, Error:%w", *createVpcOutput.Vpc.VpcId, err)
-		}
+		return nil, errors.Wrapf(err, "failed modify vpc %s", aws.StringValue(createVpcOutput.Vpc.VpcId))
 	}
-
 	return createVpcOutput.Vpc, nil
 }
 
-func (c *Cloud) createInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
-	createInternetGatewayOutput, err := c.client.CreateInternetGatewayWithContext(ctx, &ec2.CreateInternetGatewayInput{
+func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
+	cfg := c.configs[resourceId]
+	vpcName := aws.StringValue(cfg.vpcName)
+	var name string
+	if vpcName != "" {
+		name = vpcName + "-igw"
+		out, err := c.client.DescribeInternetGatewaysWithContext(ctx, &ec2.DescribeInternetGatewaysInput{
+			Filters: []*ec2.Filter{{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(name)},
+			}},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "describe internet gateway")
+		}
+		if len(out.InternetGateways) > 0 {
+			return out.InternetGateways[0], nil
+		}
+	}
+	in := &ec2.CreateInternetGatewayInput{
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
@@ -227,33 +246,54 @@ func (c *Cloud) createInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourc
 				},
 			},
 		},
-	})
+	}
+	if name != "" {
+		in.TagSpecifications[0].Tags = append(in.TagSpecifications[0].Tags, &ec2.Tag{
+			Key:   aws.String("Name"),
+			Value: aws.String(name),
+		})
+	}
+	out, err := c.client.CreateInternetGatewayWithContext(ctx, in)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed create internet gateway: %w", err)
-		}
+		return nil, errors.Wrap(err, "failed create internet gateway")
 	}
 
 	if _, err = c.client.AttachInternetGatewayWithContext(ctx, &ec2.AttachInternetGatewayInput{
-		InternetGatewayId: createInternetGatewayOutput.InternetGateway.InternetGatewayId,
+		InternetGatewayId: out.InternetGateway.InternetGatewayId,
 		VpcId:             vpc.VpcId,
 	}); err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed attach internet gateway to Vpc: VpcId:%s, Error:%w", *vpc.VpcId, err)
-		}
+		return nil, errors.Wrapf(err, "failed attach internet gateway to Vpc %s", *vpc.VpcId)
 	}
 
-	return createInternetGatewayOutput.InternetGateway, nil
+	return out.InternetGateway, nil
 }
 
-func (c *Cloud) createSecurityGroup(ctx context.Context, vpc *ec2.Vpc, groupName, groupDescription *string, resourceId string) (*string, error) {
-	createSecurityGroupResult, err := c.client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
-		GroupName:   groupName,
-		Description: groupDescription,
+func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*string, error) {
+	cfg := c.configs[resourceId]
+	vpcName := aws.StringValue(cfg.vpcName)
+	var name string
+	if vpcName != "" {
+		name = vpcName + "-sg"
+	} else {
+		name = DefaultSecurityGroupName
+	}
+
+	out, err := c.client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
+		Filters: []*ec2.Filter{{
+			Name:   aws.String("group-name"),
+			Values: []*string{aws.String(name)},
+		}},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "describe security group")
+	}
+	if len(out.SecurityGroups) > 0 {
+		return out.SecurityGroups[0].GroupId, nil
+	}
+
+	createSecurityGroupOutput, err := c.client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:   aws.String(name),
+		Description: aws.String(DefaultSecurityGroupDescription),
 		VpcId:       vpc.VpcId,
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -268,55 +308,60 @@ func (c *Cloud) createSecurityGroup(ctx context.Context, vpc *ec2.Vpc, groupName
 		},
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("Unable to create security group %q, %v ", *groupName, err)
-		}
+		return nil, errors.Wrapf(err, "unable to create security group %s", name)
 	}
 
 	if _, err = c.client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
-		GroupId: createSecurityGroupResult.GroupId,
-		IpPermissions: []*ec2.IpPermission{
-			(&ec2.IpPermission{}).
-				SetIpProtocol("-1").
-				SetFromPort(-1).
-				SetToPort(-1).
-				SetIpRanges([]*ec2.IpRange{
-					{CidrIp: aws.String(service.AllAddressesCidrBlock)},
-				}),
-		},
+		GroupId: createSecurityGroupOutput.GroupId,
+		IpPermissions: []*ec2.IpPermission{{
+			IpProtocol: aws.String("-1"),
+			FromPort:   aws.Int64(-1),
+			ToPort:     aws.Int64(-1),
+			IpRanges: []*ec2.IpRange{{
+				CidrIp: aws.String(service.AllAddressesCidrBlock),
+			}},
+		}},
 	}); err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed authorize security group ingress traffic: %w", err)
-		}
+		return nil, errors.Wrap(err, "failed authorize security group ingress traffic")
 	}
 
-	if _, err := c.client.AuthorizeSecurityGroupEgressWithContext(ctx, &ec2.AuthorizeSecurityGroupEgressInput{
-		GroupId: createSecurityGroupResult.GroupId,
+	if _, err = c.client.AuthorizeSecurityGroupEgressWithContext(ctx, &ec2.AuthorizeSecurityGroupEgressInput{
+		GroupId: createSecurityGroupOutput.GroupId,
 		IpPermissions: []*ec2.IpPermission{
-			(&ec2.IpPermission{}).
-				SetIpProtocol("-1").
-				SetFromPort(-1).
-				SetToPort(-1),
-		},
+			{
+				IpProtocol: aws.String("-1"),
+				FromPort:   aws.Int64(-1),
+				ToPort:     aws.Int64(-1),
+			}},
 	}); err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed authorize security group egress traffic: %w", err)
-		}
+		return nil, errors.Wrap(err, "failed authorize security group egress traffic")
 	}
 
-	return createSecurityGroupResult.GroupId, nil
+	return createSecurityGroupOutput.GroupId, nil
 }
 
-func (c *Cloud) createSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
-	createSubnetOutput, err := c.client.CreateSubnetWithContext(ctx, &ec2.CreateSubnetInput{
-		CidrBlock: aws.String(DefaultSubnetCidrBlock),
+func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
+	cfg := c.configs[resourceId]
+	vpcName := aws.StringValue(cfg.vpcName)
+	var name string
+	if vpcName != "" {
+		name = vpcName + "-subnet"
+		out, err := c.client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
+			Filters: []*ec2.Filter{{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(name)},
+			}},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "describe subnet")
+		}
+		if len(out.Subnets) > 0 {
+			return out.Subnets[0], nil
+		}
+	}
+	in := &ec2.CreateSubnetInput{
 		VpcId:     vpc.VpcId,
+		CidrBlock: aws.String(DefaultSubnetCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeSubnet),
@@ -328,20 +373,40 @@ func (c *Cloud) createSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId strin
 				},
 			},
 		},
-	})
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed create subnet: %w", err)
-		}
 	}
-
+	if name != "" {
+		in.TagSpecifications[0].Tags = append(in.TagSpecifications[0].Tags, &ec2.Tag{
+			Key:   aws.String("Name"),
+			Value: aws.String(name),
+		})
+	}
+	createSubnetOutput, err := c.client.CreateSubnetWithContext(ctx, in)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed create subnet")
+	}
 	return createSubnetOutput.Subnet, nil
 }
 
-func (c *Cloud) createRouteTable(ctx context.Context, vpc *ec2.Vpc, iGateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
-	createRouteTableOutput, err := c.client.CreateRouteTableWithContext(ctx, &ec2.CreateRouteTableInput{
+func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
+	cfg := c.configs[resourceId]
+	vpcName := aws.StringValue(cfg.vpcName)
+	var name string
+	if vpcName != "" {
+		name = vpcName + "-rtb"
+		out, err := c.client.DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
+			Filters: []*ec2.Filter{{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(name)},
+			}},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "describe route table")
+		}
+		if len(out.RouteTables) > 0 {
+			return out.RouteTables[0], nil
+		}
+	}
+	in := &ec2.CreateRouteTableInput{
 		VpcId: vpc.VpcId,
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -354,37 +419,31 @@ func (c *Cloud) createRouteTable(ctx context.Context, vpc *ec2.Vpc, iGateway *ec
 				},
 			},
 		},
-	})
+	}
+	if name != "" {
+		in.TagSpecifications[0].Tags = append(in.TagSpecifications[0].Tags, &ec2.Tag{
+			Key:   aws.String("Name"),
+			Value: aws.String(name),
+		})
+	}
+	out, err := c.client.CreateRouteTableWithContext(ctx, in)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed create route table: %w", err)
-		}
+		return nil, errors.Wrap(err, "failed create route table")
 	}
 
 	if _, err = c.client.CreateRouteWithContext(ctx, &ec2.CreateRouteInput{
 		DestinationCidrBlock: aws.String(service.AllAddressesCidrBlock),
-		GatewayId:            iGateway.InternetGatewayId,
-		RouteTableId:         createRouteTableOutput.RouteTable.RouteTableId,
+		GatewayId:            gateway.InternetGatewayId,
+		RouteTableId:         out.RouteTable.RouteTableId,
 	}); err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed create route: %w", err)
-		}
+		return nil, errors.Wrap(err, "failed to create route")
 	}
 
 	if _, err = c.client.AssociateRouteTableWithContext(ctx, &ec2.AssociateRouteTableInput{
-		RouteTableId: createRouteTableOutput.RouteTable.RouteTableId,
+		RouteTableId: out.RouteTable.RouteTableId,
 		SubnetId:     subnet.SubnetId,
 	}); err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			return nil, errors.New(aerr.Message())
-		} else {
-			return nil, fmt.Errorf("failed associate route table: %w", err)
-		}
+		return nil, errors.Wrap(err, "failed to associate route table")
 	}
-
-	return createRouteTableOutput.RouteTable, nil
+	return out.RouteTable, nil
 }

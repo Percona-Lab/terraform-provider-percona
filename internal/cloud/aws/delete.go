@@ -2,14 +2,13 @@ package aws
 
 import (
 	"context"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
+	"github.com/pkg/errors"
 
 	"terraform-percona/internal/service"
 )
@@ -25,176 +24,112 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 		},
 	})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to get resources")
 	}
-
-	var resources []string
+	resources := map[string][]string{}
 	for _, m := range getResourcesOutput.ResourceTagMappingList {
 		if arn.IsARN(*m.ResourceARN) {
 			parsedArn, err := arn.Parse(*m.ResourceARN)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to parse arn")
 			}
-			resources = append(resources, parsedArn.Resource)
+			resource := strings.Split(parsedArn.Resource, "/")
+			resourceType := resource[0]
+			resourceID := resource[1]
+			resources[resourceType] = append(resources[resourceType], resourceID)
 		}
 	}
 
-	var vpcId string
-	sort.Slice(resources, func(i, j int) bool {
-		iResource := strings.Split(resources[i], "/")
-		jResource := strings.Split(resources[j], "/")
-
-		iResourceType := iResource[0]
-		jResourceType := jResource[0]
-
-		if iResourceType == ec2.ResourceTypeVpc {
-			vpcId = iResource[1]
+	// Delete Instances
+	var instanceIDs []*string
+	for _, id := range resources[ec2.ResourceTypeInstance] {
+		instanceIDs = append(instanceIDs, aws.String(id))
+	}
+	if len(instanceIDs) > 0 {
+		_, err = c.client.TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
+			InstanceIds: instanceIDs,
+		})
+		if err != nil {
+			return errors.Wrap(err, "failed to terminate instance")
 		}
-
-		switch iResourceType {
-		case ec2.ResourceTypeInstance:
-			return true
-		case ec2.ResourceTypeKeyPair:
-			return true
-		case ec2.ResourceTypeVpc:
-			return false
-		case ec2.ResourceTypeRouteTable:
-			switch jResourceType {
-			case ec2.ResourceTypeInternetGateway, ec2.ResourceTypeSubnet, ec2.ResourceTypeVpc:
-				return true
-			default:
-				return false
-			}
-		case ec2.ResourceTypeInternetGateway, ec2.ResourceTypeSubnet:
-			if jResourceType == ec2.ResourceTypeVpc {
-				return true
-			}
-			return false
-		case ec2.ResourceTypeSecurityGroup:
-			switch jResourceType {
-			case ec2.ResourceTypeInstance:
-				return false
-			default:
-				return true
-			}
-		default:
-			return false
+		if err = c.client.WaitUntilInstanceTerminatedWithContext(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: instanceIDs,
+		}); err != nil {
+			return errors.Wrap(err, "failed to wait for instance termination")
 		}
-	})
+	}
 
-	for _, v := range resources {
-		resource := strings.Split(v, "/")
-		switch resource[0] {
-		case ec2.ResourceTypeInstance:
-			describeInstanceOutput, err := c.client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []*string{aws.String(resource[1])},
-			})
-			if err != nil {
-				return err
-			}
-			if describeInstanceOutput.Reservations == nil {
-				break
-			}
-			if _, err := c.client.TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
-				InstanceIds: []*string{aws.String(resource[1])},
-			}); err != nil {
-				return err
-			}
-			time.Sleep(20 * time.Second)
-		case ec2.ResourceTypeSubnet:
-			if _, err := c.client.DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
-				SubnetId: aws.String(resource[1]),
-			}); err != nil {
-				return err
-			}
-		case ec2.ResourceTypeSecurityGroup:
-			_, err = c.client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
-				GroupId: aws.String(resource[1]),
-				IpPermissions: []*ec2.IpPermission{
-					(&ec2.IpPermission{}).
-						SetIpProtocol("-1").
-						SetFromPort(-1).
-						SetToPort(-1).
-						SetIpRanges([]*ec2.IpRange{
-							{CidrIp: aws.String(service.AllAddressesCidrBlock)},
-						}),
-				},
-			})
-			if err != nil {
-				return err
-			}
-			time.Sleep(time.Second * 60)
-
-			_, err = c.client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
-				GroupId: aws.String(resource[1]),
-				IpPermissions: []*ec2.IpPermission{
-					(&ec2.IpPermission{}).
-						SetIpProtocol("-1").
-						SetFromPort(-1).
-						SetToPort(-1),
-				},
-			})
-			if err != nil {
-				return err
-			}
-			time.Sleep(time.Second * 60)
-
-			if _, err := c.client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
-				GroupId: aws.String(resource[1]),
-			}); err != nil {
-				return err
-			}
-		case ec2.ResourceTypeInternetGateway:
-			if _, err = c.client.DetachInternetGatewayWithContext(ctx, &ec2.DetachInternetGatewayInput{
-				InternetGatewayId: aws.String(resource[1]),
-				VpcId:             aws.String(vpcId),
-			}); err != nil {
-				return err
-			}
-			if _, err := c.client.DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
-				InternetGatewayId: aws.String(resource[1]),
-			}); err != nil {
-				return err
-			}
-		case ec2.ResourceTypeKeyPair:
-			if _, err := c.client.DeleteKeyPairWithContext(ctx, &ec2.DeleteKeyPairInput{
-				KeyPairId: aws.String(resource[1]),
-			}); err != nil {
-				return err
-			}
-		case ec2.ResourceTypeRouteTable:
-			if _, err := c.client.DeleteRouteWithContext(ctx, &ec2.DeleteRouteInput{
-				DestinationCidrBlock: aws.String(service.AllAddressesCidrBlock),
-				RouteTableId:         aws.String(resource[1]),
-			}); err != nil {
-				return err
-			}
-			describeRouteTableOutput, err := c.client.DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
-				RouteTableIds: []*string{aws.String(resource[1])},
-			})
-			if err != nil {
-				return err
-			}
-			if len(describeRouteTableOutput.RouteTables) > 0 {
-				if len(describeRouteTableOutput.RouteTables[0].Associations) > 0 {
-					if _, err := c.client.DisassociateRouteTableWithContext(ctx, &ec2.DisassociateRouteTableInput{
-						AssociationId: describeRouteTableOutput.RouteTables[0].Associations[0].RouteTableAssociationId,
-					}); err != nil {
-						return err
-					}
+	// Delete Route Tables
+	for _, id := range resources[ec2.ResourceTypeRouteTable] {
+		out, err := c.client.DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
+			RouteTableIds: []*string{aws.String(id)},
+		})
+		if err != nil {
+			return errors.Wrap(err, "failed to describe route tables")
+		}
+		if len(out.RouteTables) > 0 {
+			if len(out.RouteTables[0].Associations) > 0 {
+				if _, err = c.client.DisassociateRouteTableWithContext(ctx, &ec2.DisassociateRouteTableInput{
+					AssociationId: out.RouteTables[0].Associations[0].RouteTableAssociationId,
+				}); err != nil {
+					return errors.Wrap(err, "failed to disassociate route table")
 				}
 			}
-			if _, err := c.client.DeleteRouteTableWithContext(ctx, &ec2.DeleteRouteTableInput{
-				RouteTableId: aws.String(resource[1]),
+		}
+		if _, err = c.client.DeleteRouteTableWithContext(ctx, &ec2.DeleteRouteTableInput{
+			RouteTableId: aws.String(id),
+		}); err != nil {
+			return errors.Wrap(err, "failed to delete route table")
+		}
+	}
+
+	// Delete Subnets
+	for _, id := range resources[ec2.ResourceTypeSubnet] {
+		if _, err = c.client.DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
+			SubnetId: aws.String(id),
+		}); err != nil {
+			return errors.Wrap(err, "failed to delete subnet")
+		}
+	}
+
+	// Delete Security Groups
+	for _, id := range resources[ec2.ResourceTypeSecurityGroup] {
+		if _, err = c.client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+			GroupId: aws.String(id),
+		}); err != nil {
+			return errors.Wrap(err, "failed to delete security group")
+		}
+	}
+
+	// Delete Internet Gateways
+	for _, id := range resources[ec2.ResourceTypeInternetGateway] {
+		out, err := c.client.DescribeInternetGatewaysWithContext(ctx, &ec2.DescribeInternetGatewaysInput{
+			InternetGatewayIds: []*string{aws.String(id)},
+		})
+		if err != nil {
+			return errors.Wrap(err, "describe internet gateway")
+		}
+		for _, attachment := range out.InternetGateways[0].Attachments {
+			if _, err = c.client.DetachInternetGatewayWithContext(ctx, &ec2.DetachInternetGatewayInput{
+				InternetGatewayId: aws.String(id),
+				VpcId:             attachment.VpcId,
 			}); err != nil {
-				return err
+				return errors.Wrap(err, "detach internet gateway")
 			}
-		case ec2.ResourceTypeVpc:
-			if _, err := c.client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
-				VpcId: aws.String(resource[1]),
-			}); err != nil {
-				return err
-			}
+		}
+		if _, err = c.client.DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
+			InternetGatewayId: aws.String(id),
+		}); err != nil {
+			return errors.Wrap(err, "delete internet gateway")
+		}
+	}
+
+	// Delete VPC
+	for _, id := range resources[ec2.ResourceTypeVpc] {
+		if _, err = c.client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
+			VpcId: aws.String(id),
+		}); err != nil {
+			return errors.Wrap(err, "delete vpc")
 		}
 	}
 	return nil

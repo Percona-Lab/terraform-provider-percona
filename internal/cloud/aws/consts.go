@@ -7,8 +7,8 @@ import (
 const (
 	DefaultSubnetCidrBlock = "10.0.1.0/16"
 
-	SecurityGroupName        = "security-group"
-	SecurityGroupDescription = "security-group"
+	DefaultSecurityGroupName        = "percona-security-group"
+	DefaultSecurityGroupDescription = "Percona Terraform plugin security group"
 )
 
 var mapRegionImage = map[string]string{

@@ -3,13 +3,15 @@ package aws
 import (
 	"context"
 	"fmt"
+	"path"
+	"path/filepath"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/pkg/errors"
-	"path"
-	"path/filepath"
+
 	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
@@ -35,6 +37,7 @@ type resourceConfig struct {
 	volumeSize      *int64
 	volumeType      *string
 	volumeIOPS      *int64
+	vpcName         *string
 }
 
 func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance cloud.Instance, cmd string) (string, error) {
