@@ -3,10 +3,12 @@ package ps
 import (
 	"context"
 	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
+
 	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/cloud/aws"
 	"terraform-percona/internal/cloud/gcp"
@@ -55,6 +57,7 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
+	data.SetId(resourceId)
 	err = c.CreateInfrastructure(ctx, resourceId)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
@@ -95,7 +98,6 @@ func resourceInitCluster(ctx context.Context, data *schema.ResourceData, meta in
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}
 
-	data.SetId(resourceId)
 	args := make(map[string]interface{})
 	if size > 1 {
 		for i, instance := range instances {

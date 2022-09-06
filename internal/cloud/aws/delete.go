@@ -2,14 +2,16 @@ package aws
 
 import (
 	"context"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
-	"sort"
-	"strings"
+
 	"terraform-percona/internal/service"
-	"time"
 )
 
 func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
@@ -114,7 +116,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 						SetFromPort(-1).
 						SetToPort(-1).
 						SetIpRanges([]*ec2.IpRange{
-							{CidrIp: aws.String(AllAddressesCidrBlock)},
+							{CidrIp: aws.String(service.AllAddressesCidrBlock)},
 						}),
 				},
 			})
@@ -162,7 +164,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 			}
 		case ec2.ResourceTypeRouteTable:
 			if _, err := c.client.DeleteRouteWithContext(ctx, &ec2.DeleteRouteInput{
-				DestinationCidrBlock: aws.String(AllAddressesCidrBlock),
+				DestinationCidrBlock: aws.String(service.AllAddressesCidrBlock),
 				RouteTableId:         aws.String(resource[1]),
 			}); err != nil {
 				return err

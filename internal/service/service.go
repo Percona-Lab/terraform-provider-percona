@@ -10,6 +10,8 @@ import (
 const (
 	ResourceIdLen           = 20
 	ClusterResourcesTagName = "percona-cluster-stack-id"
+	AllAddressesCidrBlock   = "0.0.0.0/0"
+	DefaultVpcCidrBlock     = "10.0.0.0/16"
 )
 
 const (
@@ -22,6 +24,7 @@ const (
 	VolumeType           = "volume_type"
 	VolumeSize           = "volume_size"
 	VolumeIOPS           = "volume_iops"
+	VPCName              = "vpc_name"
 )
 
 func DefaultSchema() map[string]*schema.Schema {
@@ -73,6 +76,10 @@ func DefaultSchema() map[string]*schema.Schema {
 		},
 		VolumeIOPS: {
 			Type:     schema.TypeInt,
+			Optional: true,
+		},
+		VPCName: {
+			Type:     schema.TypeString,
 			Optional: true,
 		},
 	}

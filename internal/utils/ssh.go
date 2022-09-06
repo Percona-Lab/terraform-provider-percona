@@ -6,11 +6,12 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"net"
+	"os"
+
 	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-	"net"
-	"os"
 )
 
 func SSHConfig(user string, privateKeyPath string) (*ssh.ClientConfig, error) {
@@ -62,6 +63,14 @@ func RunCommand(ctx context.Context, cmd string, host string, config *ssh.Client
 	output, err := session.CombinedOutput(cmd)
 
 	return string(output), errors.Wrapf(err, "output %s, cmd %s", string(output), cmd)
+}
+
+func SSHPing(ctx context.Context, host string, config *ssh.ClientConfig) error {
+	conn, err := sshDialWithContext(ctx, "tcp", host+":22", config)
+	if err != nil {
+		return errors.Wrap(err, "ssh dial")
+	}
+	return errors.Wrap(conn.Close(), "connection close")
 }
 
 func sshDialWithContext(ctx context.Context, network, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {

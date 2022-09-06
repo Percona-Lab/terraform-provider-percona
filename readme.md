@@ -56,6 +56,7 @@ resource "percona_ps" "ps" {
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
   myrocks_install          = true               # optional, default: false
+  vpc_name                 = "percona_vpc_1"    # GCP only, optional, default: "default"
 }
 
 resource "percona_pxc" "pxc" {
@@ -69,6 +70,7 @@ resource "percona_pxc" "pxc" {
   volume_iops              = 4000               # optional
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
+  vpc_name                 = "percona_vpc_1"    # GCP only, optional, default: "default"
 }
 ```
 

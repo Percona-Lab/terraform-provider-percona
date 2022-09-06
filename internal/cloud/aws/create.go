@@ -3,6 +3,8 @@ package aws
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -10,7 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	"os"
+
 	"terraform-percona/internal/service"
 	"terraform-percona/internal/utils"
 	"terraform-percona/internal/utils/val"
@@ -177,7 +179,7 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 
 func (c *Cloud) createVpc(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
 	createVpcOutput, err := c.client.CreateVpcWithContext(ctx, &ec2.CreateVpcInput{
-		CidrBlock: aws.String(DefaultVpcCidrBlock),
+		CidrBlock: aws.String(service.DefaultVpcCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeVpc),
@@ -281,7 +283,7 @@ func (c *Cloud) createSecurityGroup(ctx context.Context, vpc *ec2.Vpc, groupName
 				SetFromPort(-1).
 				SetToPort(-1).
 				SetIpRanges([]*ec2.IpRange{
-					{CidrIp: aws.String(AllAddressesCidrBlock)},
+					{CidrIp: aws.String(service.AllAddressesCidrBlock)},
 				}),
 		},
 	}); err != nil {
@@ -362,7 +364,7 @@ func (c *Cloud) createRouteTable(ctx context.Context, vpc *ec2.Vpc, iGateway *ec
 	}
 
 	if _, err = c.client.CreateRouteWithContext(ctx, &ec2.CreateRouteInput{
-		DestinationCidrBlock: aws.String(AllAddressesCidrBlock),
+		DestinationCidrBlock: aws.String(service.AllAddressesCidrBlock),
 		GatewayId:            iGateway.InternetGatewayId,
 		RouteTableId:         createRouteTableOutput.RouteTable.RouteTableId,
 	}); err != nil {
