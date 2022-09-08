@@ -21,6 +21,8 @@ type Cloud struct {
 	Region  *string
 	Profile *string
 
+	IgnoreErrorsOnDestroy bool
+
 	client  *ec2.EC2
 	session *session.Session
 

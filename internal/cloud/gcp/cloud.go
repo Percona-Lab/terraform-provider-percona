@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
@@ -25,6 +26,8 @@ type Cloud struct {
 	Project string
 	Region  string
 	Zone    string
+
+	IgnoreErrorsOnDestroy bool
 
 	client *compute.Service
 
@@ -355,7 +358,13 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 		instanceName := v.Name
 		g.Go(func() error {
 			if err = doUntilStatus(gCtx, c.client.Instances.Delete(c.Project, c.Zone, instanceName).Context(gCtx), "DONE"); err != nil {
-				return errors.Wrapf(err, "delete %s instance", instanceName)
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrapf(err, "delete %s instance", instanceName)
+				} else {
+					tflog.Error(gCtx, "failed to delete instance", map[string]interface{}{
+						"instance": instanceName, "error": err.Error(),
+					})
+				}
 			}
 			return nil
 		})
@@ -367,19 +376,34 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 	if cfg.vpcName != "default" {
 		if err = doUntilStatus(ctx, c.client.Firewalls.Delete(c.Project, cfg.vpcName+"-allow-all").Context(ctx), "DONE"); err != nil {
 			if err.Error() != errNotFound {
-				return errors.Wrap(err, "failed to delete firewall")
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "failed to delete firewall")
+				}
+				tflog.Error(ctx, "failed to delete firewall", map[string]interface{}{
+					"firewall": cfg.vpcName + "-allow-all", "error": err.Error(),
+				})
 			}
 		}
 
 		if err = doUntilStatus(ctx, c.client.Subnetworks.Delete(c.Project, c.Region, cfg.subnetwork).Context(ctx), "DONE"); err != nil {
 			if err.Error() != errNotFound {
-				return errors.Wrap(err, "failed to delete subnetwork")
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "failed to delete subnetwork")
+				}
+				tflog.Error(ctx, "failed to delete subnetwork", map[string]interface{}{
+					"subnetwork": cfg.subnetwork, "error": err.Error(),
+				})
 			}
 		}
 
 		if err = doUntilStatus(ctx, c.client.Networks.Delete(c.Project, cfg.vpcName).Context(ctx), "DONE"); err != nil {
 			if err.Error() != errNotFound {
-				return errors.Wrap(err, "failed to delete vpc")
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "failed to delete vpc")
+				}
+				tflog.Error(ctx, "failed to delete vpc", map[string]interface{}{
+					"vpc": cfg.vpcName, "error": err.Error(),
+				})
 			}
 		}
 	}

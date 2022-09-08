@@ -30,17 +30,19 @@ File **main.tf**
 ```
 # AWS provider configuration
 provider "percona" {
-  region  = "eu-north-1"                                #required
-  profile = "default"                                   #optional
-  cloud   = "aws"                                       #required, supported values: "aws", "gcp"
+  region                   = "eu-north-1"               # required
+  profile                  = "default"                  # optional
+  cloud                    = "aws"                      # required, supported values: "aws", "gcp"
+  ignore_errors_on_destroy = true                       # optional, default: false
 }
 
 # GCP provider configuration
 #provider "percona" {
-#  region  = "europe-west1"
-#  zone    = "europe-west1-c"
-#  project = "project-name"
-#  cloud =   "gcp"
+#  region                   = "europe-west1"
+#  zone                     = "europe-west1-c"
+#  project                  = "project-name"
+#  cloud                    = "gcp"
+#  ignore_errors_on_destroy = false
 #}
 
 resource "percona_ps" "ps" {

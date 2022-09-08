@@ -3,9 +3,11 @@ package provider
 import (
 	"context"
 	"errors"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+
 	awsModel "terraform-percona/internal/cloud/aws"
 	"terraform-percona/internal/cloud/gcp"
 	"terraform-percona/internal/service/ps"
@@ -36,6 +38,11 @@ func New() *schema.Provider {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"ignore_errors_on_destroy": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
 			"percona_pxc": pxc.ResourceInstance(),
@@ -50,14 +57,16 @@ func Configure(_ context.Context, data *schema.ResourceData) (interface{}, diag.
 	switch cloudOpt {
 	case "aws":
 		return &awsModel.Cloud{
-			Region:  aws.String(data.Get("region").(string)),
-			Profile: aws.String(data.Get("profile").(string)),
+			Region:                aws.String(data.Get("region").(string)),
+			Profile:               aws.String(data.Get("profile").(string)),
+			IgnoreErrorsOnDestroy: data.Get("ignore_errors_on_destroy").(bool),
 		}, nil
 	case "gcp":
 		return &gcp.Cloud{
-			Project: data.Get("project").(string),
-			Region:  data.Get("region").(string),
-			Zone:    data.Get("zone").(string),
+			Project:               data.Get("project").(string),
+			Region:                data.Get("region").(string),
+			Zone:                  data.Get("zone").(string),
+			IgnoreErrorsOnDestroy: data.Get("ignore_errors_on_destroy").(bool),
 		}, nil
 	}
 	return nil, diag.FromErr(errors.New("cloud is not supported"))

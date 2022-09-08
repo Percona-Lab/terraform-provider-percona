@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/pkg/errors"
 
 	"terraform-percona/internal/service"
@@ -50,12 +51,22 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 			InstanceIds: instanceIDs,
 		})
 		if err != nil {
-			return errors.Wrap(err, "failed to terminate instance")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "failed to terminate instance")
+			}
+			tflog.Error(ctx, "failed to terminate instance", map[string]interface{}{
+				"error": err,
+			})
 		}
 		if err = c.client.WaitUntilInstanceTerminatedWithContext(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: instanceIDs,
 		}); err != nil {
-			return errors.Wrap(err, "failed to wait for instance termination")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "failed to wait for instance termination")
+			}
+			tflog.Error(ctx, "failed to wait for instance termination", map[string]interface{}{
+				"error": err,
+			})
 		}
 	}
 
@@ -65,7 +76,12 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 			RouteTableIds: []*string{aws.String(id)},
 		})
 		if err != nil {
-			return errors.Wrap(err, "failed to describe route tables")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "failed to describe route tables")
+			}
+			tflog.Error(ctx, "failed to describe route tables", map[string]interface{}{
+				"error": err,
+			})
 		}
 		if len(out.RouteTables) > 0 {
 			if len(out.RouteTables[0].Associations) > 0 {
@@ -74,12 +90,20 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 				}); err != nil {
 					return errors.Wrap(err, "failed to disassociate route table")
 				}
+				tflog.Error(ctx, "failed to disassociate route table", map[string]interface{}{
+					"error": err,
+				})
 			}
 		}
 		if _, err = c.client.DeleteRouteTableWithContext(ctx, &ec2.DeleteRouteTableInput{
 			RouteTableId: aws.String(id),
 		}); err != nil {
-			return errors.Wrap(err, "failed to delete route table")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "failed to delete route table")
+			}
+			tflog.Error(ctx, "failed to delete route table", map[string]interface{}{
+				"error": err,
+			})
 		}
 	}
 
@@ -88,7 +112,12 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 		if _, err = c.client.DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
 			SubnetId: aws.String(id),
 		}); err != nil {
-			return errors.Wrap(err, "failed to delete subnet")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "failed to delete subnet")
+			}
+			tflog.Error(ctx, "failed to delete subnet", map[string]interface{}{
+				"error": err,
+			})
 		}
 	}
 
@@ -97,7 +126,12 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 		if _, err = c.client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 			GroupId: aws.String(id),
 		}); err != nil {
-			return errors.Wrap(err, "failed to delete security group")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "failed to delete security group")
+			}
+			tflog.Error(ctx, "failed to delete security group", map[string]interface{}{
+				"error": err,
+			})
 		}
 	}
 
@@ -107,20 +141,35 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 			InternetGatewayIds: []*string{aws.String(id)},
 		})
 		if err != nil {
-			return errors.Wrap(err, "describe internet gateway")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "describe internet gateway")
+			}
+			tflog.Error(ctx, "describe internet gateway", map[string]interface{}{
+				"error": err,
+			})
 		}
 		for _, attachment := range out.InternetGateways[0].Attachments {
 			if _, err = c.client.DetachInternetGatewayWithContext(ctx, &ec2.DetachInternetGatewayInput{
 				InternetGatewayId: aws.String(id),
 				VpcId:             attachment.VpcId,
 			}); err != nil {
-				return errors.Wrap(err, "detach internet gateway")
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "detach internet gateway")
+				}
+				tflog.Error(ctx, "detach internet gateway", map[string]interface{}{
+					"error": err,
+				})
 			}
 		}
 		if _, err = c.client.DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
 			InternetGatewayId: aws.String(id),
 		}); err != nil {
-			return errors.Wrap(err, "delete internet gateway")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "delete internet gateway")
+			}
+			tflog.Error(ctx, "delete internet gateway", map[string]interface{}{
+				"error": err,
+			})
 		}
 	}
 
@@ -129,7 +178,12 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 		if _, err = c.client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
 			VpcId: aws.String(id),
 		}); err != nil {
-			return errors.Wrap(err, "delete vpc")
+			if !c.IgnoreErrorsOnDestroy {
+				return errors.Wrap(err, "delete vpc")
+			}
+			tflog.Error(ctx, "delete vpc", map[string]interface{}{
+				"error": err,
+			})
 		}
 	}
 	return nil
