@@ -2,10 +2,12 @@ package ps
 
 import (
 	"context"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
-	"strings"
+
 	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/models/ps/setup"
 	"terraform-percona/internal/service"
@@ -80,7 +82,7 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 	tflog.Info(ctx, "Starting instances")
 	for i, instance := range instances {
 		if len(instances) > 1 {
-			_, err = cloud.RunCommand(ctx, resourceId, instance, setup.SetupReplication(i+1, instances[0].PrivateIpAddress, pass, replicaPass, binlogName, binlogPos))
+			_, err = cloud.RunCommand(ctx, resourceId, instance, setup.SetupReplication(i+1, instances[0].PrivateIpAddress, pass, replicaPass))
 			if err != nil {
 				return nil, errors.Wrap(err, "setup replication")
 			}
@@ -88,6 +90,11 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 		_, err = cloud.RunCommand(ctx, resourceId, instance, setup.Restart())
 		if err != nil {
 			return nil, errors.Wrap(err, "run command")
+		}
+		if i != 0 {
+			if _, err := cloud.RunCommand(ctx, resourceId, instance, setup.StartReplica(pass, i+1, instances[0].PrivateIpAddress, replicaPass, binlogName, binlogPos)); err != nil {
+				return nil, errors.Wrap(err, "start replica")
+			}
 		}
 		if len(instances) > 1 {
 			binlogName, binlogPos, err = currentBinlogAndPosition(ctx, resourceId, cloud, instance, pass)

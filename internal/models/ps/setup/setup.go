@@ -61,7 +61,7 @@ func InstallMyRocks(password, version string) string {
 `, version, password, mysqlConfigPath)
 }
 
-func SetupReplication(serverId int, masterIP, rootPassword, replicaPassword, binlogName, binlogPos string) string {
+func SetupReplication(serverId int, masterIP, rootPassword, replicaPassword string) string {
 	cmd := fmt.Sprintf(`
 	#!/usr/bin/env bash
 	export CONFIG_PATH="%s"
@@ -76,11 +76,12 @@ func SetupReplication(serverId int, masterIP, rootPassword, replicaPassword, bin
         `, rootPassword, replicaPassword, masterIP)
 		return cmd
 	}
-	cmd += fmt.Sprintf(`
-		sudo -E bash -c 'sed -i "$ a relay-log = /var/log/mysql/mysql-relay-bin.log" $CONFIG_PATH'
-        mysql -uroot -p%s -e "SET GLOBAL server_id=%d; CHANGE REPLICATION SOURCE TO SOURCE_HOST='%s', SOURCE_USER='replica_user', SOURCE_PASSWORD='%s', SOURCE_LOG_FILE='%s', SOURCE_LOG_POS=%s; START REPLICA;"
-	`, rootPassword, serverId, masterIP, replicaPassword, binlogName, binlogPos)
+	cmd += `sudo -E bash -c 'sed -i "$ a relay-log = /var/log/mysql/mysql-relay-bin.log" $CONFIG_PATH'`
 	return cmd
+}
+
+func StartReplica(rootPassword string, serverId int, masterIP, replicaPassword, binlogName, binlogPos string) string {
+	return fmt.Sprintf(`mysql -uroot -p%s -e "SET GLOBAL server_id=%d; CHANGE REPLICATION SOURCE TO SOURCE_HOST='%s', SOURCE_USER='replica_user', SOURCE_PASSWORD='%s', SOURCE_LOG_FILE='%s', SOURCE_LOG_POS=%s; START REPLICA;"`, rootPassword, serverId, masterIP, replicaPassword, binlogName, binlogPos)
 }
 
 func ShowMasterStatus(pass string) string {
