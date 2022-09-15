@@ -69,52 +69,52 @@ func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath s
 func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
 	instanceIds := make([]*string, 0, size)
 	cfg := c.configs[resourceId]
-	for i := int64(0); i < size; i++ {
-		reservation, err := c.client.RunInstances(&ec2.RunInstancesInput{
-			ImageId:      cfg.ami,
-			InstanceType: cfg.instanceType,
-			MinCount:     aws.Int64(1),
-			MaxCount:     aws.Int64(1),
-			NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
-				{
-					AssociatePublicIpAddress: aws.Bool(true),
-					DeviceIndex:              aws.Int64(0),
-					Groups:                   []*string{cfg.securityGroupID},
-					SubnetId:                 cfg.subnetID,
+	reservation, err := c.client.RunInstances(&ec2.RunInstancesInput{
+		ImageId:      cfg.ami,
+		InstanceType: cfg.instanceType,
+		MinCount:     aws.Int64(size),
+		MaxCount:     aws.Int64(size),
+		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
+			{
+				AssociatePublicIpAddress: aws.Bool(true),
+				DeviceIndex:              aws.Int64(0),
+				Groups:                   []*string{cfg.securityGroupID},
+				SubnetId:                 cfg.subnetID,
+			},
+		},
+		BlockDeviceMappings: []*ec2.BlockDeviceMapping{
+			{
+				DeviceName: aws.String("/dev/sda1"),
+				Ebs: &ec2.EbsBlockDevice{
+					VolumeType: cfg.volumeType,
+					VolumeSize: cfg.volumeSize,
+					Iops:       cfg.volumeIOPS,
 				},
 			},
-			BlockDeviceMappings: []*ec2.BlockDeviceMapping{
-				{
-					DeviceName: aws.String(fmt.Sprintf("/dev/sd%s", string(rune('f'+i)))),
-					Ebs: &ec2.EbsBlockDevice{
-						VolumeType: cfg.volumeType,
-						VolumeSize: cfg.volumeSize,
-						Iops:       cfg.volumeIOPS,
+		},
+		KeyName: cfg.keyPair,
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				ResourceType: aws.String(ec2.ResourceTypeInstance),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String(service.ClusterResourcesTagName),
+						Value: aws.String(resourceId),
 					},
 				},
 			},
-			KeyName: cfg.keyPair,
-			TagSpecifications: []*ec2.TagSpecification{
-				{
-					ResourceType: aws.String(ec2.ResourceTypeInstance),
-					Tags: []*ec2.Tag{
-						{
-							Key:   aws.String(service.ClusterResourcesTagName),
-							Value: aws.String(resourceId),
-						},
-					},
-				},
-			},
-		})
-		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				return nil, errors.New(aerr.Message())
-			} else {
-				return nil, err
-			}
+		},
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			return nil, errors.New(aerr.Message())
+		} else {
+			return nil, err
 		}
+	}
 
-		instanceIds = append(instanceIds, reservation.Instances[0].InstanceId)
+	for _, instance := range reservation.Instances {
+		instanceIds = append(instanceIds, instance.InstanceId)
 	}
 	if err := c.client.WaitUntilInstanceStatusOkWithContext(ctx, &ec2.DescribeInstanceStatusInput{
 		InstanceIds: instanceIds,
