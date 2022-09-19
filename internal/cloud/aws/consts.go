@@ -1,9 +1,5 @@
 package aws
 
-import (
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-)
-
 const (
 	DefaultSubnetCidrBlock = "10.0.1.0/16"
 
@@ -36,8 +32,4 @@ var mapRegionImage = map[string]string{
 	"sa-east-1":      "ami-077518a464c82703b",
 	"us-gov-east-1":  "ami-0eb7ef4cc0594fa04",
 	"us-gov-west-1":  "ami-029a634618d6c0300",
-}
-
-func Schema() map[string]*schema.Schema {
-	return map[string]*schema.Schema{}
 }

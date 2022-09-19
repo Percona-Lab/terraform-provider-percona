@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 
 	"terraform-percona/internal/cloud"
-	"terraform-percona/internal/service"
+	"terraform-percona/internal/resource"
 	"terraform-percona/internal/utils"
 )
 
@@ -98,7 +98,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 				ResourceType: aws.String(ec2.ResourceTypeInstance),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},

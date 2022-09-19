@@ -18,7 +18,7 @@ import (
 	"google.golang.org/api/googleapi"
 
 	"terraform-percona/internal/cloud"
-	"terraform-percona/internal/service"
+	"terraform-percona/internal/resource"
 	"terraform-percona/internal/utils"
 )
 
@@ -55,17 +55,17 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 		c.configs[resourceId] = &resourceConfig{}
 	}
 	cfg := c.configs[resourceId]
-	cfg.keyPair = data.Get(service.KeyPairName).(string)
-	cfg.pathToKeyPair = data.Get(service.PathToKeyPairStorage).(string)
-	cfg.configFilePath = data.Get(service.ConfigFilePath).(string)
-	cfg.machineType = data.Get(service.InstanceType).(string)
-	cfg.volumeType = data.Get(service.VolumeType).(string)
+	cfg.keyPair = data.Get(resource.KeyPairName).(string)
+	cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
+	cfg.configFilePath = data.Get(resource.ConfigFilePath).(string)
+	cfg.machineType = data.Get(resource.InstanceType).(string)
+	cfg.volumeType = data.Get(resource.VolumeType).(string)
 	if cfg.volumeType == "" {
 		cfg.volumeType = "pd-balanced"
 	}
-	cfg.volumeSize = int64(data.Get(service.VolumeSize).(int))
-	cfg.volumeIOPS = int64(data.Get(service.VolumeIOPS).(int))
-	cfg.vpcName = data.Get(service.VPCName).(string)
+	cfg.volumeSize = int64(data.Get(resource.VolumeSize).(int))
+	cfg.volumeIOPS = int64(data.Get(resource.VolumeIOPS).(int))
+	cfg.vpcName = data.Get(resource.VPCName).(string)
 	cfg.subnetwork = cfg.vpcName + "-sub"
 	if cfg.vpcName == "" || cfg.vpcName == "default" {
 		cfg.vpcName = "default"
@@ -156,7 +156,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 				},
 			},
 			Labels: map[string]string{
-				service.ClusterResourcesTagName: strings.ToLower(resourceId),
+				resource.TagName: strings.ToLower(resourceId),
 			},
 			Zone: path.Join("projects", c.Project, "zones", c.Zone),
 		}
@@ -227,7 +227,7 @@ func (c *Cloud) listInstances(ctx context.Context, resourceId string) ([]compute
 	nextPageToken := ""
 	var callOptions []googleapi.CallOption
 	for {
-		list, err := c.client.Instances.List(c.Project, c.Zone).Context(ctx).Filter("labels." + service.ClusterResourcesTagName + ":" + strings.ToLower(resourceId)).Do(callOptions...)
+		list, err := c.client.Instances.List(c.Project, c.Zone).Context(ctx).Filter("labels." + resource.TagName + ":" + strings.ToLower(resourceId)).Do(callOptions...)
 		if err != nil {
 			return nil, err
 		}
@@ -283,7 +283,7 @@ func (c *Cloud) createFirewallIfNotExists(ctx context.Context, firewallName, vpc
 		Network:   path.Join("projects", c.Project, "global", "networks", vpcName),
 		Priority:  65534,
 		SourceRanges: []string{
-			service.AllAddressesCidrBlock,
+			resource.AllAddressesCidrBlock,
 		},
 		Allowed: []*compute.FirewallAllowed{
 			{
@@ -310,7 +310,7 @@ func (c *Cloud) createSubnetworkIfNotExists(ctx context.Context, subnetworkName,
 	}
 	subnetwork = &compute.Subnetwork{
 		Name:                  subnetworkName,
-		IpCidrRange:           service.DefaultVpcCidrBlock,
+		IpCidrRange:           resource.DefaultVpcCidrBlock,
 		Network:               path.Join("projects", c.Project, "global", "networks", vpcName),
 		PrivateIpGoogleAccess: true,
 		Region:                path.Join("projects", c.Project, "regions", c.Region),

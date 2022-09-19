@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/pkg/errors"
 
-	"terraform-percona/internal/service"
+	"terraform-percona/internal/resource"
 )
 
 func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
@@ -19,7 +19,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 	getResourcesOutput, err := resourceGroupingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 		TagFilters: []*resourcegroupstaggingapi.TagFilter{
 			{
-				Key:    aws.String(service.ClusterResourcesTagName),
+				Key:    aws.String(resource.TagName),
 				Values: []*string{aws.String(resourceId)},
 			},
 		},

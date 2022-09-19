@@ -1,7 +1,6 @@
-package setup
+package cmd
 
 import (
-	_ "embed"
 	"fmt"
 	"strings"
 )

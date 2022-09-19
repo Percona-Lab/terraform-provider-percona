@@ -2,16 +2,16 @@ package pxc
 
 import (
 	"context"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
-	"strings"
+
 	"terraform-percona/internal/cloud"
-	"terraform-percona/internal/models/pxc/setup"
+	"terraform-percona/internal/resource/pxc/cmd"
 	"terraform-percona/internal/utils"
 )
-
-const MySQLPassword = "password"
 
 func Create(ctx context.Context, cloud cloud.Cloud, resourceId, password string, size int64, cfgPath, version string) ([]cloud.Instance, error) {
 	tflog.Info(ctx, "Creating instances")
@@ -28,11 +28,11 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId, password string,
 	for _, instance := range instances {
 		instance := instance
 		g.Go(func() error {
-			_, err := cloud.RunCommand(gCtx, resourceId, instance, setup.Initial())
+			_, err := cloud.RunCommand(gCtx, resourceId, instance, cmd.Initial())
 			if err != nil {
 				return errors.Wrap(err, "run command pxc initial")
 			}
-			_, err = cloud.RunCommand(gCtx, resourceId, instance, setup.Configure(password))
+			_, err = cloud.RunCommand(gCtx, resourceId, instance, cmd.Configure(password))
 			if err != nil {
 				return errors.Wrap(err, "run command pxc configure")
 			}
@@ -49,7 +49,7 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId, password string,
 			} else {
 				version = availableVersions[0]
 			}
-			_, err = cloud.RunCommand(gCtx, resourceId, instance, setup.InstallPerconaXtraDBCluster(clusterAddresses, version))
+			_, err = cloud.RunCommand(gCtx, resourceId, instance, cmd.InstallPerconaXtraDBCluster(clusterAddresses, version))
 			if err != nil {
 				return errors.Wrap(err, "install percona server")
 			}
@@ -67,17 +67,17 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId, password string,
 	}
 	tflog.Info(ctx, "Starting instances")
 	for i, instance := range instances {
-		_, err = cloud.RunCommand(ctx, resourceId, instance, setup.Start(i == 0))
+		_, err = cloud.RunCommand(ctx, resourceId, instance, cmd.Start(i == 0))
 		if err != nil {
 			return nil, errors.Wrap(err, "run command pxc start")
 		}
 	}
 
 	if len(instances) > 1 {
-		if _, err = cloud.RunCommand(ctx, resourceId, instances[0], setup.Stop(true)); err != nil {
+		if _, err = cloud.RunCommand(ctx, resourceId, instances[0], cmd.Stop(true)); err != nil {
 			return nil, errors.Wrap(err, "run command bootstrap stop")
 		}
-		if _, err = cloud.RunCommand(ctx, resourceId, instances[0], setup.Start(false)); err != nil {
+		if _, err = cloud.RunCommand(ctx, resourceId, instances[0], cmd.Start(false)); err != nil {
 			return nil, errors.Wrap(err, "run command first node pxc start")
 		}
 	}
@@ -85,7 +85,7 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId, password string,
 }
 
 func versionList(ctx context.Context, resourceId string, cloud cloud.Cloud, instance cloud.Instance) ([]string, error) {
-	out, err := cloud.RunCommand(ctx, resourceId, instance, setup.RetrieveVersions())
+	out, err := cloud.RunCommand(ctx, resourceId, instance, cmd.RetrieveVersions())
 	if err != nil {
 		return nil, errors.Wrap(err, "retrieve versions")
 	}

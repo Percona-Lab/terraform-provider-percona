@@ -12,9 +12,8 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 
-	"terraform-percona/internal/service"
+	"terraform-percona/internal/resource"
 	"terraform-percona/internal/utils"
-	"terraform-percona/internal/utils/val"
 )
 
 func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.ResourceData) error {
@@ -25,20 +24,20 @@ func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.Res
 		c.configs[resourceId] = &resourceConfig{}
 	}
 	cfg := c.configs[resourceId]
-	cfg.keyPair = aws.String(data.Get(service.KeyPairName).(string))
-	cfg.pathToKeyPair = aws.String(data.Get(service.PathToKeyPairStorage).(string))
-	cfg.instanceType = aws.String(data.Get(service.InstanceType).(string))
-	cfg.volumeType = aws.String(data.Get(service.VolumeType).(string))
+	cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
+	cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
+	cfg.instanceType = aws.String(data.Get(resource.InstanceType).(string))
+	cfg.volumeType = aws.String(data.Get(resource.VolumeType).(string))
 	if aws.StringValue(cfg.volumeType) == "" {
 		cfg.volumeType = aws.String("gp2")
 	}
-	cfg.volumeSize = aws.Int64(int64(data.Get(service.VolumeSize).(int)))
-	if v, ok := data.Get(service.VolumeIOPS).(int); ok {
+	cfg.volumeSize = aws.Int64(int64(data.Get(resource.VolumeSize).(int)))
+	if v, ok := data.Get(resource.VolumeIOPS).(int); ok {
 		if v != 0 {
 			cfg.volumeIOPS = aws.Int64(int64(v))
 		}
 	}
-	cfg.vpcName = aws.String(data.Get(service.VPCName).(string))
+	cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
 
 	if c.Region != nil {
 		if ami, ok := mapRegionImage[aws.StringValue(c.Region)]; ok {
@@ -96,7 +95,7 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) err
 
 func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 	cfg := c.configs[resourceId]
-	if val.Str(cfg.keyPair) == "" {
+	if aws.StringValue(cfg.keyPair) == "" {
 		return errors.New("cannot create key pair with empty name")
 	}
 
@@ -150,7 +149,7 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 				ResourceType: aws.String(ec2.ResourceTypeKeyPair),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -181,13 +180,13 @@ func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc
 		}
 	}
 	in := &ec2.CreateVpcInput{
-		CidrBlock: aws.String(service.DefaultVpcCidrBlock),
+		CidrBlock: aws.String(resource.DefaultVpcCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeVpc),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -240,7 +239,7 @@ func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, re
 				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -300,7 +299,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 				ResourceType: aws.String(ec2.ResourceTypeSecurityGroup),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -318,7 +317,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 			FromPort:   aws.Int64(-1),
 			ToPort:     aws.Int64(-1),
 			IpRanges: []*ec2.IpRange{{
-				CidrIp: aws.String(service.AllAddressesCidrBlock),
+				CidrIp: aws.String(resource.AllAddressesCidrBlock),
 			}},
 		}},
 	}); err != nil {
@@ -367,7 +366,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId 
 				ResourceType: aws.String(ec2.ResourceTypeSubnet),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -413,7 +412,7 @@ func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway
 				ResourceType: aws.String(ec2.ResourceTypeRouteTable),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(service.ClusterResourcesTagName),
+						Key:   aws.String(resource.TagName),
 						Value: aws.String(resourceId),
 					},
 				},
@@ -432,7 +431,7 @@ func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway
 	}
 
 	if _, err = c.client.CreateRouteWithContext(ctx, &ec2.CreateRouteInput{
-		DestinationCidrBlock: aws.String(service.AllAddressesCidrBlock),
+		DestinationCidrBlock: aws.String(resource.AllAddressesCidrBlock),
 		GatewayId:            gateway.InternetGatewayId,
 		RouteTableId:         out.RouteTable.RouteTableId,
 	}); err != nil {

@@ -1,4 +1,4 @@
-package service
+package resource
 
 import (
 	"github.com/hashicorp/go-cty/cty"
@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	ResourceIdLen           = 20
-	ClusterResourcesTagName = "percona-cluster-stack-id"
-	AllAddressesCidrBlock   = "0.0.0.0/0"
-	DefaultVpcCidrBlock     = "10.0.0.0/16"
+	IDLength              = 20
+	TagName               = "percona-cluster-stack-id"
+	AllAddressesCidrBlock = "0.0.0.0/0"
+	DefaultVpcCidrBlock   = "10.0.0.0/16"
 )
 
 const (

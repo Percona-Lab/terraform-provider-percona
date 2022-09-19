@@ -9,18 +9,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"terraform-percona/internal/cloud"
-	"terraform-percona/internal/models/ps/setup"
-	"terraform-percona/internal/service"
+	"terraform-percona/internal/resource"
+	"terraform-percona/internal/resource/ps/cmd"
 	"terraform-percona/internal/utils"
 )
 
-const (
-	RootPassword    = "password"
-	ReplicaPassword = "replica_password"
-	MyRocksInstall  = "myrocks_install"
-)
-
-func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int64, pass, replicaPass, cfgPath, version string, installMyRocks bool) ([]cloud.Instance, error) {
+func createCluster(ctx context.Context, cloud cloud.Cloud, resourceId string, size int64, pass, replicaPass, cfgPath, version string, installMyRocks bool) ([]cloud.Instance, error) {
 	tflog.Info(ctx, "Creating instances")
 	instances, err := cloud.CreateInstances(ctx, resourceId, size)
 	if err != nil {
@@ -32,11 +26,11 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 	for _, instance := range instances {
 		instance := instance
 		g.Go(func() error {
-			_, err := cloud.RunCommand(gCtx, resourceId, instance, setup.Initial())
+			_, err := cloud.RunCommand(gCtx, resourceId, instance, cmd.Initial())
 			if err != nil {
 				return errors.Wrap(err, "run command")
 			}
-			_, err = cloud.RunCommand(gCtx, resourceId, instance, setup.Configure(pass))
+			_, err = cloud.RunCommand(gCtx, resourceId, instance, cmd.Configure(pass))
 			if err != nil {
 				return errors.Wrap(err, "run command")
 			}
@@ -54,10 +48,10 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 				version = availableVersions[0]
 			}
 			tflog.Info(gCtx, "Installing Percona Server", map[string]interface{}{
-				service.LogArgVersion:    version,
-				service.LogArgInstanceIP: instance.PublicIpAddress,
+				resource.LogArgVersion:    version,
+				resource.LogArgInstanceIP: instance.PublicIpAddress,
 			})
-			_, err = cloud.RunCommand(gCtx, resourceId, instance, setup.InstallPerconaServer(pass, version))
+			_, err = cloud.RunCommand(gCtx, resourceId, instance, cmd.InstallPerconaServer(pass, version))
 			if err != nil {
 				return errors.Wrap(err, "install percona server")
 			}
@@ -67,7 +61,7 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 				}
 			}
 			if installMyRocks {
-				_, err = cloud.RunCommand(gCtx, resourceId, instance, setup.InstallMyRocks(pass, version))
+				_, err = cloud.RunCommand(gCtx, resourceId, instance, cmd.InstallMyRocks(pass, version))
 				if err != nil {
 					return errors.Wrap(err, "install myrocks")
 				}
@@ -82,17 +76,17 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 	tflog.Info(ctx, "Starting instances")
 	for i, instance := range instances {
 		if len(instances) > 1 {
-			_, err = cloud.RunCommand(ctx, resourceId, instance, setup.SetupReplication(i+1, instances[0].PrivateIpAddress, pass, replicaPass))
+			_, err = cloud.RunCommand(ctx, resourceId, instance, cmd.SetupReplication(i+1, instances[0].PrivateIpAddress, pass, replicaPass))
 			if err != nil {
 				return nil, errors.Wrap(err, "setup replication")
 			}
 		}
-		_, err = cloud.RunCommand(ctx, resourceId, instance, setup.Restart())
+		_, err = cloud.RunCommand(ctx, resourceId, instance, cmd.Restart())
 		if err != nil {
 			return nil, errors.Wrap(err, "run command")
 		}
 		if i != 0 {
-			if _, err := cloud.RunCommand(ctx, resourceId, instance, setup.StartReplica(pass, i+1, instances[0].PrivateIpAddress, replicaPass, binlogName, binlogPos)); err != nil {
+			if _, err := cloud.RunCommand(ctx, resourceId, instance, cmd.StartReplica(pass, i+1, instances[0].PrivateIpAddress, replicaPass, binlogName, binlogPos)); err != nil {
 				return nil, errors.Wrap(err, "start replica")
 			}
 		}
@@ -107,7 +101,7 @@ func Create(ctx context.Context, cloud cloud.Cloud, resourceId string, size int6
 }
 
 func currentBinlogAndPosition(ctx context.Context, resourceId string, cloud cloud.Cloud, instance cloud.Instance, pass string) (string, string, error) {
-	out, err := cloud.RunCommand(ctx, resourceId, instance, setup.ShowMasterStatus(pass))
+	out, err := cloud.RunCommand(ctx, resourceId, instance, cmd.ShowMasterStatus(pass))
 	if err != nil {
 		return "", "", errors.Wrap(err, "run command")
 	}
@@ -131,7 +125,7 @@ func currentBinlogAndPosition(ctx context.Context, resourceId string, cloud clou
 }
 
 func versionList(ctx context.Context, resourceId string, cloud cloud.Cloud, instance cloud.Instance) ([]string, error) {
-	out, err := cloud.RunCommand(ctx, resourceId, instance, setup.RetrieveVersions())
+	out, err := cloud.RunCommand(ctx, resourceId, instance, cmd.RetrieveVersions())
 	if err != nil {
 		return nil, errors.Wrap(err, "retrieve versions")
 	}
