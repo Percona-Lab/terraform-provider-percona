@@ -1,6 +1,9 @@
 Percona Terraform Provider
 =========================
 
+### DISCLAIMER
+This is an experimental project, use on your own risk. This project is not covered by Percona Support
+
 ## Requirements
 
 - [Terraform](https://www.terraform.io/downloads.html) 1.1.2
