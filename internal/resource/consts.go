@@ -25,6 +25,7 @@ const (
 	VolumeSize           = "volume_size"
 	VolumeIOPS           = "volume_iops"
 	VPCName              = "vpc_name"
+	Instances            = "instances"
 )
 
 func DefaultSchema() map[string]*schema.Schema {

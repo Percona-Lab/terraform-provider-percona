@@ -23,6 +23,26 @@ resource "percona_ps" "ps" {
   path_to_key_pair_storage = "/tmp/"
 }
 
+locals {
+  primary = one([for instance in percona_ps.ps.instances: instance if instance.is_replica == false])
+  replicas = [for instance in percona_ps.ps.instances: instance if instance.is_replica == true]
+}
+
+output "ps_primary_instance" {
+  value = {
+    public_ip = local.primary.public_ip_address
+    private_ip = local.primary.private_ip_address
+  }
+}
+
+output "ps_replica_instances" {
+  value = [for instance in local.replicas:
+  {
+    public_ip = instance.public_ip_address
+    private_ip = instance.private_ip_address
+  }]
+}
+
 resource "percona_pxc" "pxc" {
   instance_type            = "t3.micro" # for AWS
 #  instance_type             = "e2-micro" # for GCP
@@ -30,4 +50,9 @@ resource "percona_pxc" "pxc" {
   password                 = "password"
   cluster_size             = 2
   path_to_key_pair_storage = "/tmp/"
+}
+
+
+output "pxc_instances" {
+  value = [for instance in percona_pxc.pxc.instances: instance]
 }

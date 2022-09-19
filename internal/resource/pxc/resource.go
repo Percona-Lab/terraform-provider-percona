@@ -28,6 +28,22 @@ func Resource() *schema.Resource {
 				Optional: true,
 				Default:  "password",
 			},
+			resource.Instances: {
+				Type:     schema.TypeSet,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"public_ip_address": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"private_ip_address": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+					},
+				},
+			},
 		}),
 	}
 }
@@ -58,6 +74,18 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 	instances, err := Create(ctx, c, resourceId, pass, int64(size), cfgPath, version)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
+	}
+
+	set := data.Get(resource.Instances).(*schema.Set)
+	for _, instance := range instances {
+		set.Add(map[string]interface{}{
+			"public_ip_address":  instance.PublicIpAddress,
+			"private_ip_address": instance.PrivateIpAddress,
+		})
+	}
+	err = data.Set(resource.Instances, set)
+	if err != nil {
+		return diag.FromErr(errors.Wrap(err, "can't set instances"))
 	}
 
 	args := make(map[string]interface{})

@@ -42,6 +42,26 @@ func Resource() *schema.Resource {
 				Optional: true,
 				Default:  false,
 			},
+			resource.Instances: {
+				Type:     schema.TypeSet,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"public_ip_address": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"private_ip_address": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"is_replica": {
+							Type:     schema.TypeBool,
+							Computed: true,
+						},
+					},
+				},
+			},
 		}),
 	}
 }
@@ -75,6 +95,19 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 	instances, err := createCluster(ctx, c, resourceId, int64(size), pass, replicaPass, cfgPath, version, myRocksInstall)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
+	}
+
+	set := data.Get(resource.Instances).(*schema.Set)
+	for i, instance := range instances {
+		set.Add(map[string]interface{}{
+			"is_replica":         i == 0,
+			"public_ip_address":  instance.PublicIpAddress,
+			"private_ip_address": instance.PrivateIpAddress,
+		})
+	}
+	err = data.Set(resource.Instances, set)
+	if err != nil {
+		return diag.FromErr(errors.Wrap(err, "can't set instances"))
 	}
 
 	args := make(map[string]interface{})
