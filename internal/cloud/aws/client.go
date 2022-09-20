@@ -30,16 +30,17 @@ type Cloud struct {
 }
 
 type resourceConfig struct {
-	keyPair         *string
-	pathToKeyPair   *string
-	securityGroupID *string
-	subnetID        *string
-	ami             *string
-	instanceType    *string
-	volumeSize      *int64
-	volumeType      *string
-	volumeIOPS      *int64
-	vpcName         *string
+	keyPair          *string
+	pathToKeyPair    *string
+	securityGroupID  *string
+	subnetID         *string
+	ami              *string
+	instanceType     *string
+	volumeSize       *int64
+	volumeType       *string
+	volumeIOPS       *int64
+	volumeThroughput *int64
+	vpcName          *string
 }
 
 func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance cloud.Instance, cmd string) (string, error) {
@@ -89,6 +90,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 					VolumeType: cfg.volumeType,
 					VolumeSize: cfg.volumeSize,
 					Iops:       cfg.volumeIOPS,
+					Throughput: cfg.volumeThroughput,
 				},
 			},
 		},

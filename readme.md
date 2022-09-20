@@ -58,6 +58,7 @@ resource "percona_ps" "ps" {
   volume_type              = "gp2"              # optional, default: "gp2" for AWS, "pd-balanced" for GCP
   volume_size              = 20                 # optional, default: 20
   volume_iops              = 4000               # optional
+  volume_throughput        = 4000               # optional, AWS only
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
   myrocks_install          = true               # optional, default: false
@@ -73,6 +74,7 @@ resource "percona_pxc" "pxc" {
   volume_type              = "gp2"              # optional, default: "gp2" for AWS, "pd-balanced" for GCP
   volume_size              = 20                 # optional, default: 20
   volume_iops              = 4000               # optional
+  volume_throughput        = 4000               # optional, AWS only
   config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
   version                  = "8.0.28"           # optional, installs last version if not specified
   vpc_name                 = "percona_vpc_1"    # optional

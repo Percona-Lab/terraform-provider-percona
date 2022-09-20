@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"terraform-percona/internal/cloud"
+	"terraform-percona/internal/cloud/aws"
 	"terraform-percona/internal/resource"
 	"terraform-percona/internal/utils"
 )
@@ -22,7 +23,7 @@ func Resource() *schema.Resource {
 		ReadContext:   readResource,
 		UpdateContext: updateResource,
 		DeleteContext: deleteResource,
-		Schema: utils.MergeSchemas(resource.DefaultSchema(), map[string]*schema.Schema{
+		Schema: utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{
 			MySQLPassword: {
 				Type:     schema.TypeString,
 				Optional: true,

@@ -37,6 +37,11 @@ func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.Res
 			cfg.volumeIOPS = aws.Int64(int64(v))
 		}
 	}
+	if v, ok := data.Get(volumeThroughput).(int); ok {
+		if v != 0 {
+			cfg.volumeThroughput = aws.Int64(int64(v))
+		}
+	}
 	cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
 
 	if c.Region != nil {
@@ -274,7 +279,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 	if vpcName != "" {
 		name = vpcName + "-sg"
 	} else {
-		name = DefaultSecurityGroupName
+		name = defaultSecurityGroupName
 	}
 
 	out, err := c.client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
@@ -292,7 +297,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 
 	createSecurityGroupOutput, err := c.client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
 		GroupName:   aws.String(name),
-		Description: aws.String(DefaultSecurityGroupDescription),
+		Description: aws.String(defaultSecurityGroupDescription),
 		VpcId:       vpc.VpcId,
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -360,7 +365,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId 
 	}
 	in := &ec2.CreateSubnetInput{
 		VpcId:     vpc.VpcId,
-		CidrBlock: aws.String(DefaultSubnetCidrBlock),
+		CidrBlock: aws.String(defaultSubnetCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeSubnet),

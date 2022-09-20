@@ -1,10 +1,14 @@
 package aws
 
-const (
-	DefaultSubnetCidrBlock = "10.0.1.0/16"
+import (
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+)
 
-	DefaultSecurityGroupName        = "percona-security-group"
-	DefaultSecurityGroupDescription = "Percona Terraform plugin security group"
+const (
+	defaultSubnetCidrBlock = "10.0.1.0/16"
+
+	defaultSecurityGroupName        = "percona-security-group"
+	defaultSecurityGroupDescription = "Percona Terraform plugin security group"
 )
 
 var mapRegionImage = map[string]string{
@@ -32,4 +36,15 @@ var mapRegionImage = map[string]string{
 	"sa-east-1":      "ami-077518a464c82703b",
 	"us-gov-east-1":  "ami-0eb7ef4cc0594fa04",
 	"us-gov-west-1":  "ami-029a634618d6c0300",
+}
+
+const volumeThroughput = "volume_throughput"
+
+func Schema() map[string]*schema.Schema {
+	return map[string]*schema.Schema{
+		volumeThroughput: {
+			Type:     schema.TypeInt,
+			Optional: true,
+		},
+	}
 }
