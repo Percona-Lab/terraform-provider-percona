@@ -1,11 +1,12 @@
 package utils
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"golang.org/x/mod/semver"
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"golang.org/x/mod/semver"
 )
 
 func init() {
@@ -71,4 +72,8 @@ func SelectVersion(availableVersions []string, wantedVersion string) string {
 
 func removeDebianRevision(version string) string {
 	return strings.Split(version, "-")[0]
+}
+
+func Ref[T any](x T) *T {
+	return &x
 }

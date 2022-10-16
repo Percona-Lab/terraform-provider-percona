@@ -6,16 +6,21 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
+	compute "cloud.google.com/go/compute/apiv1"
+	"github.com/googleapis/gax-go/v2"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
+	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
 
 	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/resource"
@@ -29,7 +34,12 @@ type Cloud struct {
 
 	IgnoreErrorsOnDestroy bool
 
-	client *compute.Service
+	client struct {
+		Instances   *compute.InstancesClient
+		Networks    *compute.NetworksClient
+		Subnetworks *compute.SubnetworksClient
+		Firewalls   *compute.FirewallsClient
+	}
 
 	configs map[string]*resourceConfig
 }
@@ -42,7 +52,7 @@ type resourceConfig struct {
 	publicKey      string
 	volumeType     string
 	volumeSize     int64
-	volumeIOPS     int64
+	volumeIOPS     *int64
 	vpcName        string
 	subnetwork     string
 }
@@ -64,7 +74,9 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 		cfg.volumeType = "pd-balanced"
 	}
 	cfg.volumeSize = int64(data.Get(resource.VolumeSize).(int))
-	cfg.volumeIOPS = int64(data.Get(resource.VolumeIOPS).(int))
+	if volumeIOPS := int64(data.Get(resource.VolumeIOPS).(int)); volumeIOPS != 0 {
+		cfg.volumeIOPS = &volumeIOPS
+	}
 	cfg.vpcName = data.Get(resource.VPCName).(string)
 	cfg.subnetwork = cfg.vpcName + "-sub"
 	if cfg.vpcName == "" || cfg.vpcName == "default" {
@@ -73,36 +85,77 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 	}
 
 	var err error
-	c.client, err = compute.NewService(ctx)
+	c.client.Instances, err = compute.NewInstancesRESTClient(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to create compute client")
+		return errors.Wrap(err, "failed to create instances client")
 	}
+	runtime.SetFinalizer(c.client.Instances, func (obj *compute.InstancesClient) {
+		if err := obj.Close(); err != nil {
+			tflog.Error(ctx, "failed to close instances client")
+		}
+	})
+	c.client.Networks, err = compute.NewNetworksRESTClient(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to create networks client")
+	}
+	runtime.SetFinalizer(c.client.Networks, func (obj *compute.NetworksClient) {
+		if err := obj.Close(); err != nil {
+			tflog.Error(ctx, "failed to close networks client")
+		}
+	})
+	c.client.Subnetworks, err = compute.NewSubnetworksRESTClient(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to create subnetworks client")
+	}
+	runtime.SetFinalizer(c.client.Subnetworks, func (obj *compute.SubnetworksClient) {
+		if err := obj.Close(); err != nil {
+			tflog.Error(ctx, "failed to close subnetworks client")
+		}
+	})
+	c.client.Firewalls, err = compute.NewFirewallsRESTClient(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to create firewalls client")
+	}
+	runtime.SetFinalizer(c.client.Firewalls, func (obj *compute.FirewallsClient) {
+		if err := obj.Close(); err != nil {
+			tflog.Error(ctx, "failed to close firewalls client")
+		}
+	})
 	return nil
 }
 
 func (c *Cloud) createVPCIfNotExists(ctx context.Context, cfg *resourceConfig) error {
-	vpc, err := c.client.Networks.Get(c.Project, cfg.vpcName).Context(ctx).Do()
+	vpc, err := c.client.Networks.Get(ctx, &computepb.GetNetworkRequest{
+		Project: c.Project,
+		Network: cfg.vpcName,
+	})
 	if err != nil {
-		gerr, ok := err.(*googleapi.Error)
-		if (ok && gerr.Code != http.StatusNotFound) || !ok {
-			return errors.Wrap(err, "failed to get vpc")
+		var gerr *googleapi.Error
+		if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
+			return errors.Wrapf(err, "failed to get vpc %b", ok)
 		}
 	}
 	if vpc != nil {
 		return nil
 	}
-	vpc = &compute.Network{
-		Name: cfg.vpcName,
-		RoutingConfig: &compute.NetworkRoutingConfig{
-			RoutingMode: "REGIONAL",
+	vpc = &computepb.Network{
+		Name: utils.Ref(cfg.vpcName),
+		RoutingConfig: &computepb.NetworkRoutingConfig{
+			RoutingMode: utils.Ref("REGIONAL"),
 		},
-		AutoCreateSubnetworks:                 false,
-		ForceSendFields:                       []string{"AutoCreateSubnetworks"},
-		NetworkFirewallPolicyEnforcementOrder: "AFTER_CLASSIC_FIREWALL",
-		Mtu:                                   1460,
+		AutoCreateSubnetworks:                 utils.Ref(false),
+		NetworkFirewallPolicyEnforcementOrder: utils.Ref("AFTER_CLASSIC_FIREWALL"),
+		Mtu:                                   utils.Ref(int32(1460)),
 	}
-	if err = doUntilStatus(ctx, c.client.Networks.Insert(c.Project, vpc).Context(ctx), "DONE"); err != nil {
-		return errors.Wrap(err, "failed to create vpc")
+	op, err := c.client.Networks.Insert(ctx, &computepb.InsertNetworkRequest{
+		NetworkResource: vpc,
+		Project:         c.Project,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to insert vpc")
+	}
+	if err = op.Wait(ctx); err != nil {
+		return errors.Wrap(err, "failed to wait for vpc")
 	}
 	return nil
 }
@@ -110,135 +163,140 @@ func (c *Cloud) createVPCIfNotExists(ctx context.Context, cfg *resourceConfig) e
 func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
 	cfg := c.configs[resourceId]
 	publicKey := user + ":" + cfg.publicKey
-	diskType := path.Join("projects", c.Project, "zones", c.Zone, "diskTypes", cfg.volumeType)
 	subnetwork := path.Join("projects", c.Project, "regions", c.Region, "subnetworks", cfg.subnetwork)
-	machineTypePath := path.Join("projects", c.Project, "zones", c.Zone, "machineTypes", cfg.machineType)
 
-	g, gCtx := errgroup.WithContext(ctx)
-	for i := int64(0); i < size; i++ {
-		name := strings.ToLower(fmt.Sprintf("instance-%s-%d", resourceId, i))
-		instance := &compute.Instance{
-			Name:        name,
-			MachineType: machineTypePath,
-			Disks: []*compute.AttachedDisk{
-				{
-					AutoDelete: true,
-					Boot:       true,
-					Type:       "PERSISTENT",
-					InitializeParams: &compute.AttachedDiskInitializeParams{
-						DiskName:        name,
-						DiskType:        diskType,
-						DiskSizeGb:      cfg.volumeSize,
-						ProvisionedIops: cfg.volumeIOPS,
-						SourceImage:     sourceImage,
-					},
-					DiskEncryptionKey: new(compute.CustomerEncryptionKey),
-				},
-			},
-			Metadata: &compute.Metadata{
-				Items: []*compute.MetadataItems{
+	op, err := c.client.Instances.BulkInsert(ctx, &computepb.BulkInsertInstanceRequest{
+		BulkInsertInstanceResourceResource: &computepb.BulkInsertInstanceResource{
+			Count: utils.Ref(size),
+			InstanceProperties: &computepb.InstanceProperties{
+				Disks: []*computepb.AttachedDisk{
 					{
-						Key:   "ssh-keys",
-						Value: &publicKey,
+						AutoDelete: utils.Ref(true),
+						Boot:       utils.Ref(true),
+						Type:       utils.Ref("PERSISTENT"),
+						InitializeParams: &computepb.AttachedDiskInitializeParams{
+							DiskType:        utils.Ref(cfg.volumeType),
+							DiskSizeGb:      utils.Ref(cfg.volumeSize),
+							ProvisionedIops: cfg.volumeIOPS,
+							SourceImage:     utils.Ref(sourceImage),
+						},
+						DiskEncryptionKey: new(computepb.CustomerEncryptionKey),
 					},
 				},
-			},
-			NetworkInterfaces: []*compute.NetworkInterface{
-				{
-					AccessConfigs: []*compute.AccessConfig{
+				Labels: map[string]string{
+					resource.TagName: strings.ToLower(resourceId),
+				},
+				MachineType: utils.Ref(cfg.machineType),
+				Metadata: &computepb.Metadata{
+					Items: []*computepb.Items{
 						{
-							Name:        "External NAT",
-							NetworkTier: "PREMIUM",
+							Key:   utils.Ref("ssh-keys"),
+							Value: &publicKey,
 						},
 					},
-					StackType:  "IPV4_ONLY",
-					Subnetwork: subnetwork,
+				},
+				NetworkInterfaces: []*computepb.NetworkInterface{
+					{
+						AccessConfigs: []*computepb.AccessConfig{
+							{
+								Name:        utils.Ref("External NAT"),
+								NetworkTier: utils.Ref("PREMIUM"),
+								Type:        utils.Ref("ONE_TO_ONE_NAT"),
+							},
+						},
+						StackType:  utils.Ref("IPV4_ONLY"),
+						Subnetwork: utils.Ref(subnetwork),
+					},
 				},
 			},
-			Labels: map[string]string{
-				resource.TagName: strings.ToLower(resourceId),
-			},
-			Zone: path.Join("projects", c.Project, "zones", c.Zone),
-		}
-		g.Go(func() error {
-			if err := doUntilStatus(gCtx, c.client.Instances.Insert(c.Project, c.Zone, instance).Context(gCtx), "RUNNING"); err != nil {
-				return errors.Wrapf(err, "failed to create instance %s", instance.Name)
-			}
-			return nil
-		})
+			MinCount:    utils.Ref(size),
+			NamePattern: utils.Ref(instanceNamePattern(resourceId, int(size))),
+		},
+		Project: c.Project,
+		Zone:    c.Zone,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to insert instances")
 	}
-	if err := g.Wait(); err != nil {
-		return nil, errors.Wrap(err, "failed to create instances")
+	if err := op.Wait(ctx); err != nil {
+		return nil, errors.Wrap(err, "failed to wait instances")
 	}
 
-	if err := c.waitUntilAllInstancesAreReady(ctx, resourceId); err != nil {
+	if err := c.waitUntilAllInstancesAreReady(ctx, c.client.Instances, resourceId); err != nil {
 		return nil, errors.Wrap(err, "failed to wait instances")
 	}
 	var instances []cloud.Instance
-	list, err := c.listInstances(ctx, resourceId)
+	list, err := c.listInstances(ctx, c.client.Instances, resourceId)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list instances")
 	}
-	for _, v := range list {
+	for _, instance := range list {
 		instances = append(instances, cloud.Instance{
-			PrivateIpAddress: v.NetworkInterfaces[0].NetworkIP,
-			PublicIpAddress:  v.NetworkInterfaces[0].AccessConfigs[0].NatIP,
+			PrivateIpAddress: *instance.NetworkInterfaces[0].NetworkIP,
+			PublicIpAddress:  *instance.NetworkInterfaces[0].AccessConfigs[0].NatIP,
 		})
 	}
 	return instances, nil
 }
 
-func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, resourceId string) error {
+func instanceNamePattern(resourceId string, size int) string {
+	hashSequence := strings.Repeat("#", len(strconv.Itoa(size)))
+	return strings.ToLower(fmt.Sprintf("instance-%s-%s", resourceId, hashSequence))
+}
+
+func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, client *compute.InstancesClient, resourceId string) error {
 	sshConfig, err := c.sshConfig(resourceId)
 	if err != nil {
 		return errors.Wrap(err, "ssh config")
 	}
 	for {
-		shouldExit := true
-		list, err := c.listInstances(ctx, resourceId)
+		isReady := true
+		list, err := c.listInstances(ctx, client, resourceId)
 		if err != nil {
 			return errors.Wrap(err, "failed to list instances")
 		}
+		if len(list) == 0 {
+			if err = gax.Sleep(ctx, time.Second); err != nil {
+				return err
+			}
+			continue
+		}
 		for _, v := range list {
 			host := v.NetworkInterfaces[0].AccessConfigs[0].NatIP
-			if host == "" {
-				shouldExit = false
+			if host == nil || *host == "" {
+				isReady = false
 				break
 			}
-			if err = utils.SSHPing(ctx, host, sshConfig); err != nil {
-				shouldExit = false
+			if err = utils.SSHPing(ctx, *host, sshConfig); err != nil {
+				isReady = false
 				break
 			}
 		}
-		if shouldExit {
+		if isReady {
 			return nil
 		}
-		time.Sleep(time.Second)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if err = gax.Sleep(ctx, time.Second); err != nil {
+			return err
 		}
 	}
 }
 
-func (c *Cloud) listInstances(ctx context.Context, resourceId string) ([]compute.Instance, error) {
-	var instances []compute.Instance
-	nextPageToken := ""
-	var callOptions []googleapi.CallOption
+func (c *Cloud) listInstances(ctx context.Context, client *compute.InstancesClient, resourceId string) ([]*computepb.Instance, error) {
+	var instances []*computepb.Instance
+	it := client.List(ctx, &computepb.ListInstancesRequest{
+		Filter:  utils.Ref("labels." + resource.TagName + ":" + strings.ToLower(resourceId)),
+		Project: c.Project,
+		Zone:    c.Zone,
+	})
 	for {
-		list, err := c.client.Instances.List(c.Project, c.Zone).Context(ctx).Filter("labels." + resource.TagName + ":" + strings.ToLower(resourceId)).Do(callOptions...)
-		if err != nil {
-			return nil, err
-		}
-		for _, instance := range list.Items {
-			instances = append(instances, *instance)
-		}
-		if list.NextPageToken == "" || len(list.Items) == 0 {
+		instance, err := it.Next()
+		if err == iterator.Done {
 			break
 		}
-		nextPageToken = list.NextPageToken
-		callOptions = []googleapi.CallOption{googleapi.QueryParameter("pageToken", nextPageToken)}
+		if err != nil {
+			return nil, errors.Wrap(err, "next page")
+		}
+		instances = append(instances, instance)
 	}
 	return instances, nil
 }
@@ -267,57 +325,89 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) err
 }
 
 func (c *Cloud) createFirewallIfNotExists(ctx context.Context, firewallName, vpcName string) error {
-	firewall, err := c.client.Firewalls.Get(c.Project, firewallName).Context(ctx).Do()
+	client, err := compute.NewFirewallsRESTClient(ctx)
 	if err != nil {
-		gerr, ok := err.(*googleapi.Error)
-		if (ok && gerr.Code != http.StatusNotFound) || !ok {
+		return errors.Wrap(err, "failed to create instances client")
+	}
+	defer client.Close()
+	firewall, err := client.Get(ctx, &computepb.GetFirewallRequest{
+		Firewall: firewallName,
+		Project:  c.Project,
+	})
+	if err != nil {
+		var gerr *googleapi.Error
+		if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
 			return errors.Wrap(err, "failed to get subnetwork")
 		}
 	}
 	if firewall != nil {
 		return nil
 	}
-	firewall = &compute.Firewall{
-		Name:      firewallName,
-		Direction: "INGRESS",
-		Network:   path.Join("projects", c.Project, "global", "networks", vpcName),
-		Priority:  65534,
+	firewall = &computepb.Firewall{
+		Name:      utils.Ref(firewallName),
+		Direction: utils.Ref("INGRESS"),
+		Network:   utils.Ref(path.Join("projects", c.Project, "global", "networks", vpcName)),
+		Priority:  utils.Ref(int32(65534)),
 		SourceRanges: []string{
 			resource.AllAddressesCidrBlock,
 		},
-		Allowed: []*compute.FirewallAllowed{
+		Allowed: []*computepb.Allowed{
 			{
-				IPProtocol: "all",
+				IPProtocol: utils.Ref("all"),
 			},
 		},
 	}
-	if err = doUntilStatus(ctx, c.client.Firewalls.Insert(c.Project, firewall).Context(ctx), "DONE"); err != nil {
-		return errors.Wrap(err, "failed to doUntilStatus firewall")
+	op, err := client.Insert(ctx, &computepb.InsertFirewallRequest{
+		FirewallResource: firewall,
+		Project:          c.Project,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to insert firewall")
+	}
+	if err = op.Wait(ctx); err != nil {
+		return errors.Wrap(err, "failed to wait for firewall")
 	}
 	return nil
 }
 
 func (c *Cloud) createSubnetworkIfNotExists(ctx context.Context, subnetworkName, vpcName string) error {
-	subnetwork, err := c.client.Subnetworks.Get(c.Project, c.Region, subnetworkName).Context(ctx).Do()
+	client, err := compute.NewSubnetworksRESTClient(ctx)
 	if err != nil {
-		gerr, ok := err.(*googleapi.Error)
-		if (ok && gerr.Code != http.StatusNotFound) || !ok {
+		return errors.Wrap(err, "failed to create subnetworks client")
+	}
+	defer client.Close()
+	subnetwork, err := client.Get(ctx, &computepb.GetSubnetworkRequest{
+		Project:    c.Project,
+		Region:     c.Region,
+		Subnetwork: subnetworkName,
+	})
+	if err != nil {
+		var gerr *googleapi.Error
+		if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
 			return errors.Wrap(err, "failed to get subnetwork")
 		}
 	}
 	if subnetwork != nil {
 		return nil
 	}
-	subnetwork = &compute.Subnetwork{
-		Name:                  subnetworkName,
-		IpCidrRange:           resource.DefaultVpcCidrBlock,
-		Network:               path.Join("projects", c.Project, "global", "networks", vpcName),
-		PrivateIpGoogleAccess: true,
-		Region:                path.Join("projects", c.Project, "regions", c.Region),
-		StackType:             "IPV4_ONLY",
+	subnetwork = &computepb.Subnetwork{
+		Name:                  utils.Ref(subnetworkName),
+		IpCidrRange:           utils.Ref(resource.DefaultVpcCidrBlock),
+		Network:               utils.Ref(path.Join("projects", c.Project, "global", "networks", vpcName)),
+		PrivateIpGoogleAccess: utils.Ref(true),
+		Region:                utils.Ref(path.Join("projects", c.Project, "regions", c.Region)),
+		StackType:             utils.Ref("IPV4_ONLY"),
 	}
-	if err = doUntilStatus(ctx, c.client.Subnetworks.Insert(c.Project, c.Region, subnetwork).Context(ctx), "DONE"); err != nil {
-		return errors.Wrap(err, "failed to create subnetwork")
+	op, err := client.Insert(ctx, &computepb.InsertSubnetworkRequest{
+		Project:            c.Project,
+		Region:             c.Region,
+		SubnetworkResource: subnetwork,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to insert subnetwork")
+	}
+	if err = op.Wait(ctx); err != nil {
+		return errors.Wrap(err, "failed to wait for subnetwork")
 	}
 	return nil
 }
@@ -349,20 +439,35 @@ func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath s
 
 func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
 	cfg := c.configs[resourceId]
-	list, err := c.listInstances(ctx, resourceId)
+	list, err := c.listInstances(ctx, c.client.Instances, resourceId)
 	if err != nil {
 		return errors.Wrap(err, "failed to list instances")
 	}
 	g, gCtx := errgroup.WithContext(ctx)
-	for _, v := range list {
-		instanceName := v.Name
+
+	for _, instance := range list {
+		instance := instance
 		g.Go(func() error {
-			if err = doUntilStatus(gCtx, c.client.Instances.Delete(c.Project, c.Zone, instanceName).Context(gCtx), "DONE"); err != nil {
+			op, err := c.client.Instances.Delete(ctx, &computepb.DeleteInstanceRequest{
+				Instance: instance.GetName(),
+				Project:  c.Project,
+				Zone:     c.Zone,
+			})
+			if err != nil {
 				if !c.IgnoreErrorsOnDestroy {
-					return errors.Wrapf(err, "delete %s instance", instanceName)
+					return errors.Wrapf(err, "delete %s instance", instance.GetName())
 				} else {
 					tflog.Error(gCtx, "failed to delete instance", map[string]interface{}{
-						"instance": instanceName, "error": err.Error(),
+						"instance": instance.GetName(), "error": err.Error(),
+					})
+				}
+			}
+			if err = op.Wait(ctx); err != nil {
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrapf(err, "delete %s instance", instance.GetName())
+				} else {
+					tflog.Error(gCtx, "failed to wait instance deletion", map[string]interface{}{
+						"instance": instance.GetName(), "error": err.Error(),
 					})
 				}
 			}
@@ -374,35 +479,79 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 	}
 
 	if cfg.vpcName != "default" {
-		if err = doUntilStatus(ctx, c.client.Firewalls.Delete(c.Project, cfg.vpcName+"-allow-all").Context(ctx), "DONE"); err != nil {
-			if err.Error() != errNotFound {
+		firewall := cfg.vpcName + "-allow-all"
+		op, err := c.client.Firewalls.Delete(ctx, &computepb.DeleteFirewallRequest{
+			Firewall: firewall,
+			Project:  c.Project,
+		})
+		if err != nil {
+			var gerr *googleapi.Error
+			if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
 				if !c.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to delete firewall")
 				}
 				tflog.Error(ctx, "failed to delete firewall", map[string]interface{}{
-					"firewall": cfg.vpcName + "-allow-all", "error": err.Error(),
+					"firewall": firewall, "error": err.Error(),
+				})
+			}
+		} else {
+			if err := op.Wait(ctx); err != nil {
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "failed to wait for firewall deletion")
+				}
+				tflog.Error(ctx, "failed to wait for firewall deletion", map[string]interface{}{
+					"firewall": firewall, "error": err.Error(),
 				})
 			}
 		}
-
-		if err = doUntilStatus(ctx, c.client.Subnetworks.Delete(c.Project, c.Region, cfg.subnetwork).Context(ctx), "DONE"); err != nil {
-			if err.Error() != errNotFound {
+		subnetwork := cfg.subnetwork
+		op, err = c.client.Subnetworks.Delete(ctx, &computepb.DeleteSubnetworkRequest{
+			Project:    c.Project,
+			Region:     c.Region,
+			Subnetwork: subnetwork,
+		})
+		if err != nil {
+			var gerr *googleapi.Error
+			if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
 				if !c.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to delete subnetwork")
 				}
 				tflog.Error(ctx, "failed to delete subnetwork", map[string]interface{}{
-					"subnetwork": cfg.subnetwork, "error": err.Error(),
+					"subnetwork": subnetwork, "error": err.Error(),
+				})
+			}
+		} else {
+			if err := op.Wait(ctx); err != nil {
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "failed to wait for firewall deletion")
+				}
+				tflog.Error(ctx, "failed to wait for subnetwork deletion", map[string]interface{}{
+					"subnetwork": firewall, "error": err.Error(),
 				})
 			}
 		}
-
-		if err = doUntilStatus(ctx, c.client.Networks.Delete(c.Project, cfg.vpcName).Context(ctx), "DONE"); err != nil {
-			if err.Error() != errNotFound {
+		network := cfg.vpcName
+		op, err = c.client.Networks.Delete(ctx, &computepb.DeleteNetworkRequest{
+			Network: network,
+			Project: c.Project,
+		})
+		if err != nil {
+			var gerr *googleapi.Error
+			if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
 				if !c.IgnoreErrorsOnDestroy {
-					return errors.Wrap(err, "failed to delete vpc")
+					return errors.Wrap(err, "failed to delete network")
 				}
-				tflog.Error(ctx, "failed to delete vpc", map[string]interface{}{
-					"vpc": cfg.vpcName, "error": err.Error(),
+				tflog.Error(ctx, "failed to delete network", map[string]interface{}{
+					"network": network, "error": err.Error(),
+				})
+			}
+		} else {
+			if err := op.Wait(ctx); err != nil {
+				if !c.IgnoreErrorsOnDestroy {
+					return errors.Wrap(err, "failed to wait for firewall deletion")
+				}
+				tflog.Error(ctx, "failed to wait for network deletion", map[string]interface{}{
+					"network": firewall, "error": err.Error(),
 				})
 			}
 		}
