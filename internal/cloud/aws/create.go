@@ -17,13 +17,7 @@ import (
 )
 
 func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.ResourceData) error {
-	if c.configs == nil {
-		c.configs = make(map[string]*resourceConfig)
-	}
-	if _, ok := c.configs[resourceId]; !ok {
-		c.configs[resourceId] = &resourceConfig{}
-	}
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
 	cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
 	cfg.instanceType = aws.String(data.Get(resource.InstanceType).(string))
@@ -93,13 +87,13 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) err
 		return err
 	}
 
-	c.configs[resourceId].securityGroupID = securityGroupId
-	c.configs[resourceId].subnetID = subnet.SubnetId
+	c.config(resourceId).securityGroupID = securityGroupId
+	c.config(resourceId).subnetID = subnet.SubnetId
 	return nil
 }
 
 func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	if aws.StringValue(cfg.keyPair) == "" {
 		return errors.New("cannot create key pair with empty name")
 	}
@@ -168,7 +162,7 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 }
 
 func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	name := aws.StringValue(cfg.vpcName)
 	if name != "" {
 		out, err := c.client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
@@ -220,7 +214,7 @@ func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc
 }
 
 func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	vpcName := aws.StringValue(cfg.vpcName)
 	var name string
 	if vpcName != "" {
@@ -273,7 +267,7 @@ func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, re
 }
 
 func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*string, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	vpcName := aws.StringValue(cfg.vpcName)
 	var name string
 	if vpcName != "" {
@@ -345,7 +339,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 }
 
 func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	vpcName := aws.StringValue(cfg.vpcName)
 	var name string
 	if vpcName != "" {
@@ -392,7 +386,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId 
 }
 
 func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	vpcName := aws.StringValue(cfg.vpcName)
 	var name string
 	if vpcName != "" {

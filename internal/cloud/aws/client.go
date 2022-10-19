@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -27,6 +28,7 @@ type Cloud struct {
 	session *session.Session
 
 	configs map[string]*resourceConfig
+	configsMu sync.Mutex
 }
 
 type resourceConfig struct {
@@ -41,6 +43,20 @@ type resourceConfig struct {
 	volumeIOPS       *int64
 	volumeThroughput *int64
 	vpcName          *string
+}
+
+func (c *Cloud) config(resourceId string) *resourceConfig {
+	c.configsMu.Lock()
+	if c.configs == nil {
+		c.configs = make(map[string]*resourceConfig)
+	}
+	res, ok := c.configs[resourceId]
+	if !ok {
+		res = new(resourceConfig)
+		c.configs[resourceId] = res
+	}
+	c.configsMu.Unlock()
+	return res
 }
 
 func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance cloud.Instance, cmd string) (string, error) {
@@ -69,7 +85,7 @@ func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath s
 
 func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
 	instanceIds := make([]*string, 0, size)
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	reservation, err := c.client.RunInstances(&ec2.RunInstancesInput{
 		ImageId:      cfg.ami,
 		InstanceType: cfg.instanceType,
@@ -162,7 +178,7 @@ func (c *Cloud) listInstances(ctx context.Context, instanceIds []*string) ([]clo
 }
 
 func (c *Cloud) keyPairPath(resourceId string) (string, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	filePath, err := filepath.Abs(path.Join(aws.StringValue(cfg.pathToKeyPair), aws.StringValue(cfg.keyPair)+".pem"))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get absolute key pair path")

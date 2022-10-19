@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	compute "cloud.google.com/go/compute/apiv1"
@@ -42,6 +43,7 @@ type Cloud struct {
 	}
 
 	configs map[string]*resourceConfig
+	configsMu sync.Mutex
 }
 
 type resourceConfig struct {
@@ -57,14 +59,22 @@ type resourceConfig struct {
 	subnetwork     string
 }
 
-func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.ResourceData) error {
+func (c *Cloud) config(resourceId string) *resourceConfig {
+	c.configsMu.Lock()
 	if c.configs == nil {
 		c.configs = make(map[string]*resourceConfig)
 	}
-	if _, ok := c.configs[resourceId]; !ok {
-		c.configs[resourceId] = &resourceConfig{}
+	res, ok := c.configs[resourceId]
+	if !ok {
+		res = new(resourceConfig)
+		c.configs[resourceId] = res
 	}
-	cfg := c.configs[resourceId]
+	c.configsMu.Unlock()
+	return res
+}
+
+func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.ResourceData) error {
+	cfg := c.config(resourceId)
 	cfg.keyPair = data.Get(resource.KeyPairName).(string)
 	cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
 	cfg.configFilePath = data.Get(resource.ConfigFilePath).(string)
@@ -161,7 +171,7 @@ func (c *Cloud) createVPCIfNotExists(ctx context.Context, cfg *resourceConfig) e
 }
 
 func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	publicKey := user + ":" + cfg.publicKey
 	subnetwork := path.Join("projects", c.Project, "regions", c.Region, "subnetworks", cfg.subnetwork)
 
@@ -306,7 +316,7 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) err
 	if err != nil {
 		return errors.Wrap(err, "key pair path")
 	}
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	cfg.publicKey, err = utils.GetSSHPublicKey(sshKeyPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to create SSH key")
@@ -413,7 +423,7 @@ func (c *Cloud) createSubnetworkIfNotExists(ctx context.Context, subnetworkName,
 }
 
 func (c *Cloud) keyPairPath(resourceId string) (string, error) {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	filePath, err := filepath.Abs(path.Join(cfg.pathToKeyPair, cfg.keyPair+".pem"))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get absolute key pair path")
@@ -438,7 +448,7 @@ func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath s
 }
 
 func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
-	cfg := c.configs[resourceId]
+	cfg := c.config(resourceId)
 	list, err := c.listInstances(ctx, c.client.Instances, resourceId)
 	if err != nil {
 		return errors.Wrap(err, "failed to list instances")
