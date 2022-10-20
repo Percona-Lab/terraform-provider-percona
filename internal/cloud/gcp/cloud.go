@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -170,10 +171,49 @@ func (c *Cloud) createVPCIfNotExists(ctx context.Context, cfg *resourceConfig) e
 	return nil
 }
 
+func (c *Cloud) sourceImageURI(ctx context.Context) (string, error) {
+	cli, err := compute.NewImagesRESTClient(ctx)
+	if err != nil {
+		return "", errors.Wrap(err, "new image rest client")
+	}
+	defer cli.Close()
+	filter := `name eq 'ubuntu-minimal-2004-focal-v.*'`
+
+	req := &computepb.ListImagesRequest{
+		Filter:  &filter,
+		Project: "ubuntu-os-cloud",
+	}
+	var images []*computepb.Image
+	it := cli.List(ctx, req)
+	for {
+		image, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return "", errors.Wrap(err, "compute image list")
+		}
+		if image.Status != nil && *image.Status == "READY" {
+			images = append(images, image)
+		}
+	}
+	if len(images) == 0 {
+		return "", errors.New("image not found")
+	}
+	sort.Slice(images, func(i, j int) bool {
+		return images[i].GetName() > images[j].GetName()
+	})
+	return images[0].GetSelfLink(), nil
+}
+
 func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
 	cfg := c.config(resourceId)
 	publicKey := user + ":" + cfg.publicKey
 	subnetwork := path.Join("projects", c.Project, "regions", c.Region, "subnetworks", cfg.subnetwork)
+	sourceImage, err := c.sourceImageURI(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get latest Ubuntu 20.04 image")
+	}
 
 	op, err := c.client.Instances.BulkInsert(ctx, &computepb.BulkInsertInstanceRequest{
 		BulkInsertInstanceResourceResource: &computepb.BulkInsertInstanceResource{
@@ -569,6 +609,8 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 
 	return nil
 }
+
+const user = "ubuntu"
 
 func (c *Cloud) sshConfig(resourceId string) (*ssh.ClientConfig, error) {
 	sshKeyPath, err := c.keyPairPath(resourceId)

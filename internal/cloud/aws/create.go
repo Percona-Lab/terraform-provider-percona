@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -16,7 +17,38 @@ import (
 	"terraform-percona/internal/utils"
 )
 
-func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.ResourceData) error {
+func (c *Cloud) sourceImage(ctx context.Context) (*string, error) {
+	in := &ec2.DescribeImagesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("name"),
+				Values: []*string{aws.String("ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*")},
+			},
+		},
+		Owners: []*string{aws.String("amazon")},
+	}
+	out, err := c.client.DescribeImagesWithContext(ctx, in)
+	if err != nil {
+		return nil, errors.Wrap(err, "describe images")
+	}
+	var latestCreationDate time.Time
+	var latestImage *ec2.Image
+
+	for _, image := range out.Images {
+		date, err := time.Parse("2006-01-02T15:04:05.000Z", aws.StringValue(image.CreationDate))
+		if err != nil {
+			return nil, errors.Wrap(err, "parse creation date")
+		}
+		if date.After(latestCreationDate) {
+			latestCreationDate = date
+			latestImage = image
+		}
+	}
+
+	return latestImage.ImageId, nil
+}
+
+func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.ResourceData) error {
 	cfg := c.config(resourceId)
 	cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
 	cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
@@ -38,14 +70,6 @@ func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.Res
 	}
 	cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
 
-	if c.Region != nil {
-		if ami, ok := mapRegionImage[aws.StringValue(c.Region)]; ok {
-			cfg.ami = aws.String(ami)
-		} else {
-			return errors.Errorf("can't find any AMI for region %s", aws.StringValue(c.Region))
-		}
-	}
-
 	var err error
 	c.session, err = session.NewSession(&aws.Config{
 		Region: c.Region,
@@ -54,6 +78,10 @@ func (c *Cloud) Configure(_ context.Context, resourceId string, data *schema.Res
 		return errors.Wrap(err, "failed create aws session")
 	}
 	c.client = ec2.New(c.session)
+	cfg.ami, err = c.sourceImage(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to get latest Ubuntu 20.04 ami")
+	}
 	return nil
 }
 
