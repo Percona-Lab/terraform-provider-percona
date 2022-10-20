@@ -43,6 +43,7 @@ type resourceConfig struct {
 	volumeIOPS       *int64
 	volumeThroughput *int64
 	vpcName          *string
+	vpcId            *string
 }
 
 func (c *Cloud) config(resourceId string) *resourceConfig {

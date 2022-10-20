@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
@@ -69,6 +70,7 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 		}
 	}
 	cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
+	cfg.vpcId = aws.String(data.Get(vpcID).(string))
 
 	var err error
 	c.session, err = session.NewSession(&aws.Config{
@@ -192,6 +194,22 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
 	cfg := c.config(resourceId)
 	name := aws.StringValue(cfg.vpcName)
+	vpcID := aws.StringValue(cfg.vpcId)
+	if vpcID != "" {
+		out, err := c.client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
+			Filters: []*ec2.Filter{{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{aws.String(vpcID)},
+			}},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "describe vpc")
+		}
+		if len(out.Vpcs) > 0 {
+			return out.Vpcs[0], nil
+		}
+		tflog.Info(ctx, "VPC is not found by vpc_id", map[string]interface{}{"vpc_id": vpcID})
+	}
 	if name != "" {
 		out, err := c.client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
 			Filters: []*ec2.Filter{{
@@ -241,9 +259,17 @@ func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc
 	return createVpcOutput.Vpc, nil
 }
 
+func vpcName(vpc *ec2.Vpc) string {
+	for _, t := range vpc.Tags {
+		if aws.StringValue(t.Key) == "Name" {
+			return aws.StringValue(t.Value)
+		}
+	}
+	return ""
+}
+
 func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
-	cfg := c.config(resourceId)
-	vpcName := aws.StringValue(cfg.vpcName)
+	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
 		name = vpcName + "-igw"
@@ -295,8 +321,7 @@ func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, re
 }
 
 func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*string, error) {
-	cfg := c.config(resourceId)
-	vpcName := aws.StringValue(cfg.vpcName)
+	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
 		name = vpcName + "-sg"
@@ -367,8 +392,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 }
 
 func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
-	cfg := c.config(resourceId)
-	vpcName := aws.StringValue(cfg.vpcName)
+	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
 		name = vpcName + "-subnet"
@@ -414,8 +438,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId 
 }
 
 func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
-	cfg := c.config(resourceId)
-	vpcName := aws.StringValue(cfg.vpcName)
+	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
 		name = vpcName + "-rtb"

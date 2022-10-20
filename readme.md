@@ -49,35 +49,37 @@ provider "percona" {
 #}
 
 resource "percona_ps" "ps" {
-  instance_type            = "t3.micro"         # required
-  key_pair_name            = "sshKey1"          # required
-  password                 = "password"         # optional, default: "password"
-  replica_password         = "replicaPassword"  # optional, default: "replicaPassword"
-  cluster_size             = 2                  # optional, default: 3
-  path_to_key_pair_storage = "/tmp/"            # optional, default: "."
-  volume_type              = "gp2"              # optional, default: "gp2" for AWS, "pd-balanced" for GCP
-  volume_size              = 20                 # optional, default: 20
-  volume_iops              = 4000               # optional
-  volume_throughput        = 4000               # optional, AWS only
-  config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
-  version                  = "8.0.28"           # optional, installs last version if not specified
-  myrocks_install          = true               # optional, default: false
-  vpc_name                 = "percona_vpc_1"    # optional
+  instance_type            = "t3.micro"                # required
+  key_pair_name            = "sshKey1"                 # required
+  password                 = "password"                # optional, default: "password"
+  replica_password         = "replicaPassword"         # optional, default: "replicaPassword"
+  cluster_size             = 2                         # optional, default: 3
+  path_to_key_pair_storage = "/tmp/"                   # optional, default: "."
+  volume_type              = "gp2"                     # optional, default: "gp2" for AWS, "pd-balanced" for GCP
+  volume_size              = 20                        # optional, default: 20
+  volume_iops              = 4000                      # optional
+  volume_throughput        = 4000                      # optional, AWS only
+  config_file_path         = "./config.cnf"            # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
+  version                  = "8.0.28"                  # optional, installs last version if not specified
+  myrocks_install          = true                      # optional, default: false
+  vpc_name                 = "percona_vpc_1"           # optional
+  vpc_id                   = "cGVyY29uYV92cGNfMQ=="    # optional, AWS only
 }
 
 resource "percona_pxc" "pxc" {
-  instance_type            = "t3.micro"         # required
-  key_pair_name            = "sshKey2"          # required
-  password                 = "password"	        # optional, default: "password"
-  cluster_size             = 2      	        # optional, default: 3
-  path_to_key_pair_storage = "/tmp/"            # optional, default: "."
-  volume_type              = "gp2"              # optional, default: "gp2" for AWS, "pd-balanced" for GCP
-  volume_size              = 20                 # optional, default: 20
-  volume_iops              = 4000               # optional
-  volume_throughput        = 4000               # optional, AWS only
-  config_file_path         = "./config.cnf"     # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
-  version                  = "8.0.28"           # optional, installs last version if not specified
-  vpc_name                 = "percona_vpc_1"    # optional
+  instance_type            = "t3.micro"                # required
+  key_pair_name            = "sshKey2"                 # required
+  password                 = "password"	               # optional, default: "password"
+  cluster_size             = 2      	                 # optional, default: 3
+  path_to_key_pair_storage = "/tmp/"                   # optional, default: "."
+  volume_type              = "gp2"                     # optional, default: "gp2" for AWS, "pd-balanced" for GCP
+  volume_size              = 20                        # optional, default: 20
+  volume_iops              = 4000                      # optional
+  volume_throughput        = 4000                      # optional, AWS only
+  config_file_path         = "./config.cnf"            # optional, saves config file to /etc/mysql/mysql.conf.d/custom.cnf
+  version                  = "8.0.28"                  # optional, installs last version if not specified
+  vpc_name                 = "percona_vpc_1"           # optional
+  vpc_id                   = "cGVyY29uYV92cGNfMQ=="    # optional, AWS only
 }
 ```
 

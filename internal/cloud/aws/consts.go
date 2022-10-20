@@ -11,12 +11,19 @@ const (
 	defaultSecurityGroupDescription = "Percona Terraform plugin security group"
 )
 
-const volumeThroughput = "volume_throughput"
+const (
+	volumeThroughput = "volume_throughput"
+	vpcID = "vpc_id"
+)
 
 func Schema() map[string]*schema.Schema {
 	return map[string]*schema.Schema{
 		volumeThroughput: {
 			Type:     schema.TypeInt,
+			Optional: true,
+		},
+		vpcID: {
+			Type: schema.TypeString,
 			Optional: true,
 		},
 	}
