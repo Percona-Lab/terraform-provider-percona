@@ -8,10 +8,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
+	"terraform-percona/internal/resource/pmm"
 	"terraform-percona/internal/resource/ps"
 	"terraform-percona/internal/resource/pxc"
 
-	awsModel "terraform-percona/internal/cloud/aws"
+	awsCloud "terraform-percona/internal/cloud/aws"
 	"terraform-percona/internal/cloud/gcp"
 )
 
@@ -48,6 +49,7 @@ func New() *schema.Provider {
 		ResourcesMap: map[string]*schema.Resource{
 			"percona_pxc": pxc.Resource(),
 			"percona_ps":  ps.Resource(),
+			"percona_pmm": pmm.Resource(),
 		},
 		ConfigureContextFunc: Configure,
 	}
@@ -57,7 +59,7 @@ func Configure(_ context.Context, data *schema.ResourceData) (interface{}, diag.
 	cloudOpt := data.Get("cloud").(string)
 	switch cloudOpt {
 	case "aws":
-		return &awsModel.Cloud{
+		return &awsCloud.Cloud{
 			Region:                aws.String(data.Get("region").(string)),
 			Profile:               aws.String(data.Get("profile").(string)),
 			IgnoreErrorsOnDestroy: data.Get("ignore_errors_on_destroy").(bool),

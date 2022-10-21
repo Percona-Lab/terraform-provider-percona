@@ -50,7 +50,6 @@ type Cloud struct {
 type resourceConfig struct {
 	keyPair        string
 	pathToKeyPair  string
-	configFilePath string
 	machineType    string
 	publicKey      string
 	volumeType     string
@@ -78,7 +77,6 @@ func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.R
 	cfg := c.config(resourceID)
 	cfg.keyPair = data.Get(resource.KeyPairName).(string)
 	cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
-	cfg.configFilePath = data.Get(resource.ConfigFilePath).(string)
 	cfg.machineType = data.Get(resource.InstanceType).(string)
 	cfg.volumeType = data.Get(resource.VolumeType).(string)
 	if cfg.volumeType == "" {

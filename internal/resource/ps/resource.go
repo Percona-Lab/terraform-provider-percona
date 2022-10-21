@@ -26,7 +26,7 @@ func Resource() *schema.Resource {
 		UpdateContext: updateResource,
 		DeleteContext: deleteResource,
 
-		Schema: utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{
+		Schema: utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
 			ReplicaPassword: {
 				Type:      schema.TypeString,
 				Optional:  true,

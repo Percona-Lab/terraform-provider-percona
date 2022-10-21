@@ -2,10 +2,12 @@ package utils
 
 import (
 	"math/rand"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/pkg/errors"
 	"golang.org/x/mod/semver"
 )
 
@@ -76,4 +78,21 @@ func removeDebianRevision(version string) string {
 
 func Ref[T any](x T) *T {
 	return &x
+}
+
+func ParsePMMAddress(link string) (string, error) {
+	addr, err := url.Parse(link)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to parse pmm address")
+	}
+	if addr.Scheme == "" {
+		return "", errors.New("url scheme is empty")
+	}
+	if addr.Port() == "" {
+		addr.Host += ":443"
+	}
+	if addr.User == nil || addr.User.String() == "" {
+		addr.User = url.UserPassword("admin", "admin")
+	}
+	return addr.String(), nil
 }

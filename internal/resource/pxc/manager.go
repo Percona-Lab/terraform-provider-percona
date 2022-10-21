@@ -25,6 +25,9 @@ type manager struct {
 	mysqlPort  int
 	galeraPort int
 
+	pmmAddress  string
+	pmmPassword string
+
 	resourceID string
 
 	cloud cloud.Cloud
@@ -32,14 +35,16 @@ type manager struct {
 
 func newManager(cloud cloud.Cloud, resourceID string, data *schema.ResourceData) *manager {
 	return &manager{
-		size:       data.Get(resource.ClusterSize).(int),
-		password:   data.Get(resource.RootPassword).(string),
-		cfgPath:    data.Get(resource.ConfigFilePath).(string),
-		version:    data.Get(resource.Version).(string),
-		mysqlPort:  data.Get(resource.Port).(int),
-		galeraPort: data.Get(galeraPort).(int),
-		resourceID: resourceID,
-		cloud:      cloud,
+		size:        data.Get(resource.ClusterSize).(int),
+		password:    data.Get(resource.RootPassword).(string),
+		cfgPath:     data.Get(resource.ConfigFilePath).(string),
+		version:     data.Get(resource.Version).(string),
+		mysqlPort:   data.Get(resource.Port).(int),
+		galeraPort:  data.Get(galeraPort).(int),
+		resourceID:  resourceID,
+		cloud:       cloud,
+		pmmAddress:  data.Get(resource.PMMAddress).(string),
+		pmmPassword: data.Get(resource.PMMPassword).(string),
 	}
 }
 
@@ -82,6 +87,46 @@ func (m *manager) Create(ctx context.Context) ([]cloud.Instance, error) {
 		_, err = m.cloud.RunCommand(ctx, m.resourceID, instance, cmd.Start(i == 0))
 		if err != nil {
 			return nil, errors.Wrap(err, "run command pxc start")
+		}
+		if m.pmmAddress != "" {
+			addr, err := utils.ParsePMMAddress(m.pmmAddress)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to parse pmm address")
+			}
+			_, err = m.runCommand(ctx, instance, cmd.InstallPMMClient(addr))
+			if err != nil {
+				return nil, errors.Wrap(err, "install pmm client")
+			}
+			_, err = m.runCommand(ctx, instance, cmd.CreatePMMUser(m.password, m.pmmPassword))
+			if err != nil {
+				return nil, errors.Wrap(err, "create pmm user")
+			}
+			err = m.editDefaultCfg(ctx, instance, "mysqld", map[string]string{
+				// Slow query log
+				"slow_query_log":                    "ON",
+				"log_output":                        "FILE",
+				"long_query_time":                   "0",
+				"log_slow_admin_statements":         "ON",
+				"log_slow_slave_statements":         "ON",
+				"log_slow_rate_limit":               "100",
+				"log_slow_rate_type":                "query",
+				"slow_query_log_always_write_time":  "1",
+				"log_slow_verbosity":                "full",
+				"slow_query_log_use_global_control": "all",
+				// While you can use both slow query log and performance schema at the same time it's recommended to use only one
+				// There is some overlap in the data reported, and each incurs a small performance penalty
+				// https://docs.percona.com/percona-monitoring-and-management/setting-up/client/mysql.html#choose-and-configure-a-source
+				// We should disable performance schema
+				"performance_schema": "OFF",
+				"userstat":           "ON", // User statistics
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to edit default cfg for pmm")
+			}
+			_, err = m.runCommand(ctx, instance, cmd.AddServiceToPMM("pmm", m.pmmPassword, m.mysqlPort))
+			if err != nil {
+				return nil, errors.Wrap(err, "add service to pmm")
+			}
 		}
 	}
 

@@ -1,4 +1,4 @@
-package pxc
+package pmm
 
 import (
 	"context"
@@ -11,11 +11,8 @@ import (
 	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/cloud/aws"
 	"terraform-percona/internal/resource"
+	"terraform-percona/internal/resource/pmm/cmd"
 	"terraform-percona/internal/utils"
-)
-
-const (
-	galeraPort = "galera_port"
 )
 
 func Resource() *schema.Resource {
@@ -24,29 +21,8 @@ func Resource() *schema.Resource {
 		ReadContext:   readResource,
 		UpdateContext: updateResource,
 		DeleteContext: deleteResource,
-		Schema: utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
-			galeraPort: {
-				Type:     schema.TypeInt,
-				Optional: true,
-				Default:  4567,
-			},
-			resource.Instances: {
-				Type:     schema.TypeSet,
-				Computed: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"public_ip_address": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"private_ip_address": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-					},
-				},
-			},
-		}),
+
+		Schema: utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{}),
 	}
 }
 
@@ -56,43 +32,27 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 		return diag.Errorf("failed to get cloud controller")
 	}
 
-	resourceID := utils.GetRandomString(resource.IDLength)
+	resourceId := utils.GetRandomString(resource.IDLength)
 
-	err := c.Configure(ctx, resourceID, data)
+	err := c.Configure(ctx, resourceId, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
-
-	data.SetId(resourceID)
-	err = c.CreateInfrastructure(ctx, resourceID)
+	data.SetId(resourceId)
+	err = c.CreateInfrastructure(ctx, resourceId)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
-
-	manager := newManager(c, resourceID, data)
-	instances, err := manager.Create(ctx)
+	instances, err := c.CreateInstances(ctx, resourceId, 1)
 	if err != nil {
-		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
+		return diag.FromErr(errors.Wrap(err, "create instances"))
+	}
+	instance := instances[0]
+	if _, err := c.RunCommand(ctx, resourceId, instance, cmd.Initial()); err != nil {
+		return diag.FromErr(errors.Wrap(err, "failed initial setup"))
 	}
 
-	set := data.Get(resource.Instances).(*schema.Set)
-	for _, instance := range instances {
-		set.Add(map[string]interface{}{
-			"public_ip_address":  instance.PublicIpAddress,
-			"private_ip_address": instance.PrivateIpAddress,
-		})
-	}
-	err = data.Set(resource.Instances, set)
-	if err != nil {
-		return diag.FromErr(errors.Wrap(err, "can't set instances"))
-	}
-
-	args := make(map[string]interface{})
-	args[resource.LogArgInstanceIP] = []string{}
-	for _, instance := range instances {
-		args[resource.LogArgInstanceIP] = append(args[resource.LogArgInstanceIP].([]string), instance.PublicIpAddress)
-	}
-	tflog.Info(ctx, "Percona XtraDB Cluster resource created", args)
+	tflog.Info(ctx, "PMM resource created")
 	return nil
 }
 

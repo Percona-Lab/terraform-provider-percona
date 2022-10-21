@@ -24,6 +24,8 @@ type manager struct {
 	cfgPath        string
 	version        string
 	port           int
+	pmmAddress     string
+	pmmPassword    string
 
 	resourceID string
 
@@ -39,6 +41,8 @@ func newManager(cloud cloud.Cloud, resourceID string, data *schema.ResourceData)
 		cfgPath:        data.Get(resource.ConfigFilePath).(string),
 		version:        data.Get(resource.Version).(string),
 		port:           data.Get(resource.Port).(int),
+		pmmAddress:     data.Get(resource.PMMAddress).(string),
+		pmmPassword:    data.Get(resource.PMMPassword).(string),
 		resourceID:     resourceID,
 		cloud:          cloud,
 	}
@@ -91,6 +95,42 @@ func (m *manager) createCluster(ctx context.Context) ([]cloud.Instance, error) {
 				}
 				if err := m.editDefaultCfg(gCtx, instance, "mysqld", map[string]string{"default-storage-engine": "rocksdb"}); err != nil {
 					return errors.Wrap(err, "set default-storage-engine")
+				}
+			}
+			if m.pmmAddress != "" {
+				addr, err := utils.ParsePMMAddress(m.pmmAddress)
+				if err != nil {
+					return errors.Wrap(err, "failed to parse pmm address")
+				}
+				_, err = m.runCommand(gCtx, instance, cmd.InstallPMMClient(addr))
+				if err != nil {
+					return errors.Wrap(err, "install pmm client")
+				}
+				_, err = m.runCommand(gCtx, instance, cmd.CreatePMMUser(m.pass, m.pmmPassword))
+				if err != nil {
+					return errors.Wrap(err, "create pmm user")
+				}
+				err = m.editDefaultCfg(gCtx, instance, "mysqld", map[string]string{
+					// Slow query log
+					"slow_query_log":                    "ON",
+					"log_output":                        "FILE",
+					"long_query_time":                   "0",
+					"log_slow_admin_statements":         "ON",
+					"log_slow_slave_statements":         "ON",
+					"log_slow_rate_limit":               "100",
+					"log_slow_rate_type":                "query",
+					"slow_query_log_always_write_time":  "1",
+					"log_slow_verbosity":                "full",
+					"slow_query_log_use_global_control": "all",
+					// While you can use both slow query log and performance schema at the same time it's recommended to use only one
+					// There is some overlap in the data reported, and each incurs a small performance penalty
+					// https://docs.percona.com/percona-monitoring-and-management/setting-up/client/mysql.html#choose-and-configure-a-source
+					// We should disable performance schema
+					"performance_schema": "OFF",
+					"userstat":           "ON", // User statistics
+				})
+				if err != nil {
+					return errors.Wrap(err, "failed to edit default cfg for pmm")
 				}
 			}
 			return nil
@@ -176,6 +216,12 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 			}
 			if err := m.startReplica(ctx, instance, masterInstance.PrivateIpAddress, binlogName, binlogPos); err != nil {
 				return errors.Wrap(err, "start replica")
+			}
+		}
+		if m.pmmAddress != "" {
+			_, err = m.runCommand(ctx, instance, cmd.AddServiceToPMM("pmm", m.pmmPassword, m.port))
+			if err != nil {
+				return errors.Wrap(err, "add service to pmm")
 			}
 		}
 	}

@@ -5,6 +5,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"golang.org/x/mod/semver"
+
+	"terraform-percona/internal/utils"
 )
 
 const (
@@ -28,6 +30,8 @@ const (
 	Instances            = "instances"
 	Port                 = "port"
 	RootPassword         = "password"
+	PMMAddress           = "pmm_address"
+	PMMPassword          = "pmm_password"
 )
 
 func DefaultSchema() map[string]*schema.Schema {
@@ -41,32 +45,9 @@ func DefaultSchema() map[string]*schema.Schema {
 			Optional: true,
 			Default:  ".",
 		},
-		ClusterSize: {
-			Type:     schema.TypeInt,
-			Optional: true,
-			Default:  3,
-		},
-		ConfigFilePath: {
-			Type:     schema.TypeString,
-			Optional: true,
-		},
 		InstanceType: {
 			Type:     schema.TypeString,
 			Required: true,
-		},
-		Version: {
-			Type:     schema.TypeString,
-			Optional: true,
-			ValidateDiagFunc: func(v interface{}, path cty.Path) diag.Diagnostics {
-				version := v.(string)
-				if version == "" {
-					return diag.Errorf("empty version provided, use semantic versioning (MAJOR.MINOR.PATCH)")
-				}
-				if !semver.IsValid("v" + version) {
-					return diag.Errorf("invalid version: %s, use semantic versioning (MAJOR.MINOR.PATCH)", version)
-				}
-				return nil
-			},
 		},
 		VolumeType: {
 			Type:     schema.TypeString,
@@ -85,6 +66,34 @@ func DefaultSchema() map[string]*schema.Schema {
 			Type:     schema.TypeString,
 			Optional: true,
 		},
+	}
+}
+
+func DefaultMySQLSchema() map[string]*schema.Schema {
+	return utils.MergeSchemas(DefaultSchema(), map[string]*schema.Schema{
+		ClusterSize: {
+			Type:     schema.TypeInt,
+			Optional: true,
+			Default:  3,
+		},
+		ConfigFilePath: {
+			Type:     schema.TypeString,
+			Optional: true,
+		},
+		Version: {
+			Type:     schema.TypeString,
+			Optional: true,
+			ValidateDiagFunc: func(v interface{}, path cty.Path) diag.Diagnostics {
+				version := v.(string)
+				if version == "" {
+					return diag.Errorf("empty version provided, use semantic versioning (MAJOR.MINOR.PATCH)")
+				}
+				if !semver.IsValid("v" + version) {
+					return diag.Errorf("invalid version: %s, use semantic versioning (MAJOR.MINOR.PATCH)", version)
+				}
+				return nil
+			},
+		},
 		Port: {
 			Type:     schema.TypeInt,
 			Optional: true,
@@ -96,7 +105,17 @@ func DefaultSchema() map[string]*schema.Schema {
 			Default:   "password",
 			Sensitive: true,
 		},
-	}
+		PMMAddress: {
+			Type:     schema.TypeString,
+			Optional: true,
+		},
+		PMMPassword: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "password",
+			Sensitive: true,
+		},
+	})
 }
 
 const (

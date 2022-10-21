@@ -17,4 +17,9 @@ run:
 destroy:
 	terraform destroy
 
+clean:
+	rm .terraform.lock.hcl
+	rm terraform.tfstate
+	rm terraform-provider-percona
+
 all: setup-dir build init-dir run
