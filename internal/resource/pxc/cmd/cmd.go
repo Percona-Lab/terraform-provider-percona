@@ -2,51 +2,35 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 )
-
-func Initial() string {
-	return `#!/usr/bin/env bash
-		sudo apt-get update
-		sudo apt-get install net-tools
-
-		# install from repository
-		sudo apt-get install debconf-utils
-		sudo apt-get install -y wget gnupg2 lsb-release curl
-		wget https://repo.percona.com/apt/percona-release_latest.generic_all.deb
-		sudo dpkg -i percona-release_latest.generic_all.deb
-		sudo apt-get update
-		sudo percona-release setup pxc80`
-}
 
 func RetrieveVersions() string {
 	return `apt-cache show percona-xtradb-cluster | grep 'Version' | sed 's/Version: 1://'`
 }
 
-func InstallPerconaXtraDBCluster(clusterAddress []string, version string) string {
-	clusterAddrStr := strings.Join(clusterAddress, ",")
+func InstallPerconaXtraDBCluster(version string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
 	DEBIAN_FRONTEND=noninteractive sudo -E bash -c 'apt-get install -y percona-xtradb-cluster-common=1:%s percona-xtradb-cluster-server=1:%s percona-xtradb-cluster-client=1:%s percona-xtradb-cluster=1:%s'
 
-	export CONFIG_PATH="/etc/mysql/mysql.conf.d/mysqld.cnf"
-	export PRIVATE_NODE_ADDRESS=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
-	sudo -E bash -c 'sed -i "s/^wsrep_cluster_address=.*/wsrep_cluster_address=gcomm:\/\/%s/" $CONFIG_PATH'
-	sudo -E bash -c 'sed -i "s/^wsrep_node_name=.*/wsrep_node_name=${PRIVATE_NODE_ADDRESS}/" $CONFIG_PATH'
-	sudo -E bash -c 'sed -i "s/^#wsrep_node_address=.*/wsrep_node_address=${PRIVATE_NODE_ADDRESS}/" $CONFIG_PATH'
-
-	if grep -q "pxc-encrypt-cluster-traffic" $CONFIG_PATH; then
-	:
-	else
-	echo "pxc-encrypt-cluster-traffic=OFF" | sudo -E bash -c 'tee -a $CONFIG_PATH'
-	fi
-
-	sudo chown ubuntu /etc/mysql/mysql.conf.d/`, version, version, version, version, clusterAddrStr)
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/
+	sudo chown ubuntu /etc/mysql/mysql.conf.d/mysqld.cnf
+	`, version, version, version, version)
 }
 
 func Configure(password string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash
+	sudo apt-get update
+	sudo apt-get install net-tools
+
+	# install from repository
+	sudo apt-get install debconf-utils
+	sudo apt-get install -y wget gnupg2 lsb-release curl
+	wget https://repo.percona.com/apt/percona-release_latest.generic_all.deb
+	sudo dpkg -i percona-release_latest.generic_all.deb
+	sudo apt-get update
+	sudo percona-release setup pxc80
 	export MYSQL_SELECTION_DEFAULT_AUTH_OVERRIDE="select Use Strong Password Encryption (RECOMMENDED)"
 	echo "percona-xtradb-cluster-server   percona-xtradb-cluster-server/re-root-pass password %s" | sudo debconf-set-selections
 	echo "percona-xtradb-cluster-server   percona-xtradb-cluster-server/root-pass password %s" | sudo debconf-set-selections

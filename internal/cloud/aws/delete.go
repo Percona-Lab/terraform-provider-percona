@@ -14,13 +14,13 @@ import (
 	"terraform-percona/internal/resource"
 )
 
-func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
+func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) error {
 	resourceGroupingClient := resourcegroupstaggingapi.New(c.session)
 	getResourcesOutput, err := resourceGroupingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 		TagFilters: []*resourcegroupstaggingapi.TagFilter{
 			{
 				Key:    aws.String(resource.TagName),
-				Values: []*string{aws.String(resourceId)},
+				Values: []*string{aws.String(resourceID)},
 			},
 		},
 	})

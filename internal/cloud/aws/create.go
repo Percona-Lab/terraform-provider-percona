@@ -49,8 +49,8 @@ func (c *Cloud) sourceImage(ctx context.Context) (*string, error) {
 	return latestImage.ImageId, nil
 }
 
-func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.ResourceData) error {
-	cfg := c.config(resourceId)
+func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
+	cfg := c.config(resourceID)
 	cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
 	cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
 	cfg.instanceType = aws.String(data.Get(resource.InstanceType).(string))
@@ -87,48 +87,48 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 	return nil
 }
 
-func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) error {
-	if err := c.createKeyPair(ctx, resourceId); err != nil {
+func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) error {
+	if err := c.createKeyPair(ctx, resourceID); err != nil {
 		return err
 	}
 
-	vpc, err := c.createOrGetVPC(ctx, resourceId)
+	vpc, err := c.createOrGetVPC(ctx, resourceID)
 	if err != nil {
 		return err
 	}
 
-	internetGateway, err := c.createOrGetInternetGateway(ctx, vpc, resourceId)
+	internetGateway, err := c.createOrGetInternetGateway(ctx, vpc, resourceID)
 	if err != nil {
 		return err
 	}
 
-	securityGroupId, err := c.createOrGetSecurityGroup(ctx, vpc, resourceId)
+	securityGroupId, err := c.createOrGetSecurityGroup(ctx, vpc, resourceID)
 	if err != nil {
 		return err
 	}
 
-	subnet, err := c.createOrGetSubnet(ctx, vpc, resourceId)
+	subnet, err := c.createOrGetSubnet(ctx, vpc, resourceID)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.createOrGetRouteTable(ctx, vpc, internetGateway, subnet, resourceId)
+	_, err = c.createOrGetRouteTable(ctx, vpc, internetGateway, subnet, resourceID)
 	if err != nil {
 		return err
 	}
 
-	c.config(resourceId).securityGroupID = securityGroupId
-	c.config(resourceId).subnetID = subnet.SubnetId
+	c.config(resourceID).securityGroupID = securityGroupId
+	c.config(resourceID).subnetID = subnet.SubnetId
 	return nil
 }
 
-func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
-	cfg := c.config(resourceId)
+func (c *Cloud) createKeyPair(ctx context.Context, resourceID string) error {
+	cfg := c.config(resourceID)
 	if aws.StringValue(cfg.keyPair) == "" {
 		return errors.New("cannot create key pair with empty name")
 	}
 
-	keyPairPath, err := c.keyPairPath(resourceId)
+	keyPairPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "failed to get key pair path")
 	}
@@ -179,7 +179,7 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},
@@ -191,8 +191,8 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceId string) error {
 	return nil
 }
 
-func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc, error) {
-	cfg := c.config(resourceId)
+func (c *Cloud) createOrGetVPC(ctx context.Context, resourceID string) (*ec2.Vpc, error) {
+	cfg := c.config(resourceID)
 	name := aws.StringValue(cfg.vpcName)
 	vpcID := aws.StringValue(cfg.vpcId)
 	if vpcID != "" {
@@ -232,7 +232,7 @@ func (c *Cloud) createOrGetVPC(ctx context.Context, resourceId string) (*ec2.Vpc
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},
@@ -268,7 +268,7 @@ func vpcName(vpc *ec2.Vpc) string {
 	return ""
 }
 
-func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.InternetGateway, error) {
+func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceID string) (*ec2.InternetGateway, error) {
 	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
@@ -293,7 +293,7 @@ func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, re
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},
@@ -320,7 +320,7 @@ func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, re
 	return out.InternetGateway, nil
 }
 
-func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*string, error) {
+func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, resourceID string) (*string, error) {
 	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
@@ -352,7 +352,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},
@@ -391,7 +391,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 	return createSecurityGroupOutput.GroupId, nil
 }
 
-func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId string) (*ec2.Subnet, error) {
+func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceID string) (*ec2.Subnet, error) {
 	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
@@ -418,7 +418,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId 
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},
@@ -437,7 +437,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceId 
 	return createSubnetOutput.Subnet, nil
 }
 
-func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceId string) (*ec2.RouteTable, error) {
+func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceID string) (*ec2.RouteTable, error) {
 	vpcName := vpcName(vpc)
 	var name string
 	if vpcName != "" {
@@ -463,7 +463,7 @@ func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},

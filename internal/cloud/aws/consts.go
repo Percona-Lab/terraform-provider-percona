@@ -13,7 +13,7 @@ const (
 
 const (
 	volumeThroughput = "volume_throughput"
-	vpcID = "vpc_id"
+	vpcID            = "vpc_id"
 )
 
 func Schema() map[string]*schema.Schema {
@@ -23,7 +23,7 @@ func Schema() map[string]*schema.Schema {
 			Optional: true,
 		},
 		vpcID: {
-			Type: schema.TypeString,
+			Type:     schema.TypeString,
 			Optional: true,
 		},
 	}

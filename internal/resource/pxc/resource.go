@@ -15,7 +15,9 @@ import (
 	"terraform-percona/internal/utils"
 )
 
-const MySQLPassword = "password"
+const (
+	galeraPort = "galera_port"
+)
 
 func Resource() *schema.Resource {
 	return &schema.Resource{
@@ -24,10 +26,11 @@ func Resource() *schema.Resource {
 		UpdateContext: updateResource,
 		DeleteContext: deleteResource,
 		Schema: utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{
-			MySQLPassword: {
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "password",
+			galeraPort: {
+				Type:      schema.TypeInt,
+				Optional:  true,
+				Default:   4567,
+				Sensitive: true,
 			},
 			resource.Instances: {
 				Type:     schema.TypeSet,
@@ -55,24 +58,21 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 		return diag.Errorf("failed to get cloud controller")
 	}
 
-	resourceId := utils.GetRandomString(resource.IDLength)
+	resourceID := utils.GetRandomString(resource.IDLength)
 
-	err := c.Configure(ctx, resourceId, data)
+	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	data.SetId(resourceId)
-	err = c.CreateInfrastructure(ctx, resourceId)
+	data.SetId(resourceID)
+	err = c.CreateInfrastructure(ctx, resourceID)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
 
-	pass := data.Get(MySQLPassword).(string)
-	size := data.Get(resource.ClusterSize).(int)
-	cfgPath := data.Get(resource.ConfigFilePath).(string)
-	version := data.Get(resource.Version).(string)
-	instances, err := Create(ctx, c, resourceId, pass, int64(size), cfgPath, version)
+	manager := newManager(c, resourceID, data)
+	instances, err := manager.Create(ctx)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
 	}
@@ -114,17 +114,17 @@ func deleteResource(ctx context.Context, data *schema.ResourceData, meta interfa
 		return diag.Errorf("failed to get cloud controller")
 	}
 
-	resourceId := data.Id()
-	if resourceId == "" {
+	resourceID := data.Id()
+	if resourceID == "" {
 		return diag.FromErr(fmt.Errorf("empty resource id"))
 	}
 
-	err := c.Configure(ctx, resourceId, data)
+	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	err = c.DeleteInfrastructure(ctx, resourceId)
+	err = c.DeleteInfrastructure(ctx, resourceID)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't delete cloud infrastructure"))
 	}

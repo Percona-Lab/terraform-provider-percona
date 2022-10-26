@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
 	"net"
 	"os"
 
@@ -114,6 +115,31 @@ func SendFile(ctx context.Context, srcPath, dstPath, host string, cfg *ssh.Clien
 	if _, err = dstFile.ReadFrom(srcFile); err != nil {
 		return errors.Wrap(err, "failed to copy file")
 	}
+	return nil
+}
+
+func EditFile(ctx context.Context, host, path string, cfg *ssh.ClientConfig, editFunc func(io.ReadWriteSeeker) error) error {
+	conn, err := sshDialWithContext(ctx, "tcp", host+":22", cfg)
+	if err != nil {
+		return errors.Wrap(err, "ssh dial")
+	}
+	defer conn.Close()
+
+	sftpClient, err := sftp.NewClient(conn)
+	if err != nil {
+		return errors.Wrap(err, "failed to create sftp client")
+	}
+	defer sftpClient.Close()
+
+	f, err := sftpClient.OpenFile(path, os.O_RDWR)
+	if err != nil {
+		return errors.Wrap(err, "open file via sftp")
+	}
+	defer f.Close()
+	if err := editFunc(f); err != nil {
+		return errors.Wrap(err, "failed to edit file")
+	}
+
 	return nil
 }
 

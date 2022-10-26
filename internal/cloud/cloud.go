@@ -2,16 +2,19 @@ package cloud
 
 import (
 	"context"
+	"io"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 type Cloud interface {
-	Configure(ctx context.Context, resourceId string, data *schema.ResourceData) error
-	CreateInfrastructure(ctx context.Context, resourceId string) error
-	DeleteInfrastructure(ctx context.Context, resourceId string) error
-	RunCommand(ctx context.Context, resourceId string, instance Instance, cmd string) (string, error)
-	SendFile(ctx context.Context, resourceId, filePath, remotePath string, instance Instance) error
-	CreateInstances(ctx context.Context, resourceId string, size int64) ([]Instance, error)
+	Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error
+	CreateInfrastructure(ctx context.Context, resourceID string) error
+	DeleteInfrastructure(ctx context.Context, resourceID string) error
+	RunCommand(ctx context.Context, resourceID string, instance Instance, cmd string) (string, error)
+	SendFile(ctx context.Context, resourceID string, instance Instance, filePath, remotePath string) error
+	EditFile(ctx context.Context, resourceID string, instance Instance, path string, editFunc func(io.ReadWriteSeeker) error) error
+	CreateInstances(ctx context.Context, resourceID string, size int64) ([]Instance, error)
 }
 
 type Instance struct {

@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	RootPassword    = "password"
 	ReplicaPassword = "replica_password"
 	MyRocksInstall  = "myrocks_install"
 )
@@ -28,15 +27,11 @@ func Resource() *schema.Resource {
 		DeleteContext: deleteResource,
 
 		Schema: utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{
-			RootPassword: {
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "password",
-			},
 			ReplicaPassword: {
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "replicaPassword",
+				Type:      schema.TypeString,
+				Optional:  true,
+				Default:   "replicaPassword",
+				Sensitive: true,
 			},
 			MyRocksInstall: {
 				Type:     schema.TypeBool,
@@ -73,27 +68,21 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 		return diag.Errorf("failed to get cloud controller")
 	}
 
-	resourceId := utils.GetRandomString(resource.IDLength)
+	resourceID := utils.GetRandomString(resource.IDLength)
 
-	err := c.Configure(ctx, resourceId, data)
+	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	data.SetId(resourceId)
-	err = c.CreateInfrastructure(ctx, resourceId)
+	data.SetId(resourceID)
+	err = c.CreateInfrastructure(ctx, resourceID)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
 
-	size := data.Get(resource.ClusterSize).(int)
-	pass := data.Get(RootPassword).(string)
-	replicaPass := data.Get(ReplicaPassword).(string)
-	myRocksInstall := data.Get(MyRocksInstall).(bool)
-	cfgPath := data.Get(resource.ConfigFilePath).(string)
-	version := data.Get(resource.Version).(string)
-
-	instances, err := createCluster(ctx, c, resourceId, int64(size), pass, replicaPass, cfgPath, version, myRocksInstall)
+	manager := newManager(c, resourceID, data)
+	instances, err := manager.createCluster(ctx)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}
@@ -112,7 +101,7 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 	}
 
 	args := make(map[string]interface{})
-	if size > 1 {
+	if manager.size > 1 {
 		for i, instance := range instances {
 			if i == 0 {
 				args[resource.LogArgMasterIP] = instance.PublicIpAddress
@@ -123,7 +112,7 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 			}
 			args[resource.LogArgReplicaIP] = append(args[resource.LogArgReplicaIP].([]interface{}), instance.PublicIpAddress)
 		}
-	} else if size == 1 {
+	} else if manager.size == 1 {
 		args[resource.LogArgMasterIP] = instances[0].PublicIpAddress
 	}
 	tflog.Info(ctx, "Percona Server resource created", args)
@@ -146,17 +135,17 @@ func deleteResource(ctx context.Context, data *schema.ResourceData, meta interfa
 		return diag.Errorf("failed to get cloud controller")
 	}
 
-	resourceId := data.Id()
-	if resourceId == "" {
+	resourceID := data.Id()
+	if resourceID == "" {
 		return diag.Errorf("empty resource id")
 	}
 
-	err := c.Configure(ctx, resourceId, data)
+	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	err = c.DeleteInfrastructure(ctx, resourceId)
+	err = c.DeleteInfrastructure(ctx, resourceID)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't delete cloud infrastructure"))
 	}

@@ -64,6 +64,7 @@ resource "percona_ps" "ps" {
   myrocks_install          = true                      # optional, default: false
   vpc_name                 = "percona_vpc_1"           # optional
   vpc_id                   = "cGVyY29uYV92cGNfMQ=="    # optional, AWS only
+  port                     = 3306                      # optional, default: 3306
 }
 
 resource "percona_pxc" "pxc" {
@@ -80,6 +81,8 @@ resource "percona_pxc" "pxc" {
   version                  = "8.0.28"                  # optional, installs last version if not specified
   vpc_name                 = "percona_vpc_1"           # optional
   vpc_id                   = "cGVyY29uYV92cGNfMQ=="    # optional, AWS only
+  port                     = 3306                      # optional, default: 3306
+  galera_port              = 4567                      # optional, default: 4567
 }
 ```
 

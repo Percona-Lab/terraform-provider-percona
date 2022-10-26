@@ -26,6 +26,8 @@ const (
 	VolumeIOPS           = "volume_iops"
 	VPCName              = "vpc_name"
 	Instances            = "instances"
+	Port                 = "port"
+	RootPassword         = "password"
 )
 
 func DefaultSchema() map[string]*schema.Schema {
@@ -82,6 +84,17 @@ func DefaultSchema() map[string]*schema.Schema {
 		VPCName: {
 			Type:     schema.TypeString,
 			Optional: true,
+		},
+		Port: {
+			Type:     schema.TypeInt,
+			Optional: true,
+			Default:  3306,
+		},
+		RootPassword: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "password",
+			Sensitive: true,
 		},
 	}
 }

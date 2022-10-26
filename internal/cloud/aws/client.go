@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"sync"
@@ -27,7 +28,7 @@ type Cloud struct {
 	client  *ec2.EC2
 	session *session.Session
 
-	configs map[string]*resourceConfig
+	configs   map[string]*resourceConfig
 	configsMu sync.Mutex
 }
 
@@ -46,22 +47,22 @@ type resourceConfig struct {
 	vpcId            *string
 }
 
-func (c *Cloud) config(resourceId string) *resourceConfig {
+func (c *Cloud) config(resourceID string) *resourceConfig {
 	c.configsMu.Lock()
 	if c.configs == nil {
 		c.configs = make(map[string]*resourceConfig)
 	}
-	res, ok := c.configs[resourceId]
+	res, ok := c.configs[resourceID]
 	if !ok {
 		res = new(resourceConfig)
-		c.configs[resourceId] = res
+		c.configs[resourceID] = res
 	}
 	c.configsMu.Unlock()
 	return res
 }
 
-func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance cloud.Instance, cmd string) (string, error) {
-	sshKeyPath, err := c.keyPairPath(resourceId)
+func (c *Cloud) RunCommand(ctx context.Context, resourceID string, instance cloud.Instance, cmd string) (string, error) {
+	sshKeyPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return "", errors.Wrap(err, "get key pair path")
 	}
@@ -72,8 +73,8 @@ func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance clou
 	return utils.RunCommand(ctx, cmd, instance.PublicIpAddress, sshConfig)
 }
 
-func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath string, instance cloud.Instance) error {
-	sshKeyPath, err := c.keyPairPath(resourceId)
+func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.Instance, filePath, remotePath string) error {
+	sshKeyPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "get key pair path")
 	}
@@ -84,9 +85,21 @@ func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath s
 	return utils.SendFile(ctx, filePath, remotePath, instance.PublicIpAddress, sshConfig)
 }
 
-func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
+func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.Instance, path string, editFunc func(io.ReadWriteSeeker) error) error {
+	sshKeyPath, err := c.keyPairPath(resourceID)
+	if err != nil {
+		return errors.Wrap(err, "get key pair path")
+	}
+	sshConfig, err := utils.SSHConfig("ubuntu", sshKeyPath)
+	if err != nil {
+		return errors.Wrap(err, "get ssh config")
+	}
+	return utils.EditFile(ctx, instance.PublicIpAddress, path, sshConfig, editFunc)
+}
+
+func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64) ([]cloud.Instance, error) {
 	instanceIds := make([]*string, 0, size)
-	cfg := c.config(resourceId)
+	cfg := c.config(resourceID)
 	reservation, err := c.client.RunInstances(&ec2.RunInstancesInput{
 		ImageId:      cfg.ami,
 		InstanceType: cfg.instanceType,
@@ -118,7 +131,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceId),
+						Value: aws.String(resourceID),
 					},
 				},
 			},
@@ -178,8 +191,8 @@ func (c *Cloud) listInstances(ctx context.Context, instanceIds []*string) ([]clo
 	return instances, nil
 }
 
-func (c *Cloud) keyPairPath(resourceId string) (string, error) {
-	cfg := c.config(resourceId)
+func (c *Cloud) keyPairPath(resourceID string) (string, error) {
+	cfg := c.config(resourceID)
 	filePath, err := filepath.Abs(path.Join(aws.StringValue(cfg.pathToKeyPair), aws.StringValue(cfg.keyPair)+".pem"))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get absolute key pair path")

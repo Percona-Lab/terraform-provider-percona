@@ -3,12 +3,12 @@ package gcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -43,7 +43,7 @@ type Cloud struct {
 		Firewalls   *compute.FirewallsClient
 	}
 
-	configs map[string]*resourceConfig
+	configs   map[string]*resourceConfig
 	configsMu sync.Mutex
 }
 
@@ -60,22 +60,22 @@ type resourceConfig struct {
 	subnetwork     string
 }
 
-func (c *Cloud) config(resourceId string) *resourceConfig {
+func (c *Cloud) config(resourceID string) *resourceConfig {
 	c.configsMu.Lock()
 	if c.configs == nil {
 		c.configs = make(map[string]*resourceConfig)
 	}
-	res, ok := c.configs[resourceId]
+	res, ok := c.configs[resourceID]
 	if !ok {
 		res = new(resourceConfig)
-		c.configs[resourceId] = res
+		c.configs[resourceID] = res
 	}
 	c.configsMu.Unlock()
 	return res
 }
 
-func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.ResourceData) error {
-	cfg := c.config(resourceId)
+func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
+	cfg := c.config(resourceID)
 	cfg.keyPair = data.Get(resource.KeyPairName).(string)
 	cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
 	cfg.configFilePath = data.Get(resource.ConfigFilePath).(string)
@@ -100,7 +100,7 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 	if err != nil {
 		return errors.Wrap(err, "failed to create instances client")
 	}
-	runtime.SetFinalizer(c.client.Instances, func (obj *compute.InstancesClient) {
+	runtime.SetFinalizer(c.client.Instances, func(obj *compute.InstancesClient) {
 		if err := obj.Close(); err != nil {
 			tflog.Error(ctx, "failed to close instances client")
 		}
@@ -109,7 +109,7 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 	if err != nil {
 		return errors.Wrap(err, "failed to create networks client")
 	}
-	runtime.SetFinalizer(c.client.Networks, func (obj *compute.NetworksClient) {
+	runtime.SetFinalizer(c.client.Networks, func(obj *compute.NetworksClient) {
 		if err := obj.Close(); err != nil {
 			tflog.Error(ctx, "failed to close networks client")
 		}
@@ -118,7 +118,7 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 	if err != nil {
 		return errors.Wrap(err, "failed to create subnetworks client")
 	}
-	runtime.SetFinalizer(c.client.Subnetworks, func (obj *compute.SubnetworksClient) {
+	runtime.SetFinalizer(c.client.Subnetworks, func(obj *compute.SubnetworksClient) {
 		if err := obj.Close(); err != nil {
 			tflog.Error(ctx, "failed to close subnetworks client")
 		}
@@ -127,7 +127,7 @@ func (c *Cloud) Configure(ctx context.Context, resourceId string, data *schema.R
 	if err != nil {
 		return errors.Wrap(err, "failed to create firewalls client")
 	}
-	runtime.SetFinalizer(c.client.Firewalls, func (obj *compute.FirewallsClient) {
+	runtime.SetFinalizer(c.client.Firewalls, func(obj *compute.FirewallsClient) {
 		if err := obj.Close(); err != nil {
 			tflog.Error(ctx, "failed to close firewalls client")
 		}
@@ -206,8 +206,8 @@ func (c *Cloud) sourceImageURI(ctx context.Context) (string, error) {
 	return images[0].GetSelfLink(), nil
 }
 
-func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int64) ([]cloud.Instance, error) {
-	cfg := c.config(resourceId)
+func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64) ([]cloud.Instance, error) {
+	cfg := c.config(resourceID)
 	publicKey := user + ":" + cfg.publicKey
 	subnetwork := path.Join("projects", c.Project, "regions", c.Region, "subnetworks", cfg.subnetwork)
 	sourceImage, err := c.sourceImageURI(ctx)
@@ -234,7 +234,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 					},
 				},
 				Labels: map[string]string{
-					resource.TagName: strings.ToLower(resourceId),
+					resource.TagName: strings.ToLower(resourceID),
 				},
 				MachineType: utils.Ref(cfg.machineType),
 				Metadata: &computepb.Metadata{
@@ -260,7 +260,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 				},
 			},
 			MinCount:    utils.Ref(size),
-			NamePattern: utils.Ref(instanceNamePattern(resourceId, int(size))),
+			NamePattern: utils.Ref(instanceNamePattern(resourceID)),
 		},
 		Project: c.Project,
 		Zone:    c.Zone,
@@ -272,11 +272,11 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 		return nil, errors.Wrap(err, "failed to wait instances")
 	}
 
-	if err := c.waitUntilAllInstancesAreReady(ctx, c.client.Instances, resourceId); err != nil {
+	if err := c.waitUntilAllInstancesAreReady(ctx, c.client.Instances, resourceID); err != nil {
 		return nil, errors.Wrap(err, "failed to wait instances")
 	}
 	var instances []cloud.Instance
-	list, err := c.listInstances(ctx, c.client.Instances, resourceId)
+	list, err := c.listInstances(ctx, c.client.Instances, resourceID)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list instances")
 	}
@@ -289,19 +289,18 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceId string, size int
 	return instances, nil
 }
 
-func instanceNamePattern(resourceId string, size int) string {
-	hashSequence := strings.Repeat("#", len(strconv.Itoa(size)))
-	return strings.ToLower(fmt.Sprintf("instance-%s-%s", resourceId, hashSequence))
+func instanceNamePattern(resourceID string) string {
+	return strings.ToLower(fmt.Sprintf("instance-%s-#", resourceID))
 }
 
-func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, client *compute.InstancesClient, resourceId string) error {
-	sshConfig, err := c.sshConfig(resourceId)
+func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, client *compute.InstancesClient, resourceID string) error {
+	sshConfig, err := c.sshConfig(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "ssh config")
 	}
 	for {
 		isReady := true
-		list, err := c.listInstances(ctx, client, resourceId)
+		list, err := c.listInstances(ctx, client, resourceID)
 		if err != nil {
 			return errors.Wrap(err, "failed to list instances")
 		}
@@ -331,10 +330,10 @@ func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, client *compu
 	}
 }
 
-func (c *Cloud) listInstances(ctx context.Context, client *compute.InstancesClient, resourceId string) ([]*computepb.Instance, error) {
+func (c *Cloud) listInstances(ctx context.Context, client *compute.InstancesClient, resourceID string) ([]*computepb.Instance, error) {
 	var instances []*computepb.Instance
 	it := client.List(ctx, &computepb.ListInstancesRequest{
-		Filter:  utils.Ref("labels." + resource.TagName + ":" + strings.ToLower(resourceId)),
+		Filter:  utils.Ref("labels." + resource.TagName + ":" + strings.ToLower(resourceID)),
 		Project: c.Project,
 		Zone:    c.Zone,
 	})
@@ -351,12 +350,12 @@ func (c *Cloud) listInstances(ctx context.Context, client *compute.InstancesClie
 	return instances, nil
 }
 
-func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceId string) error {
-	sshKeyPath, err := c.keyPairPath(resourceId)
+func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) error {
+	sshKeyPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "key pair path")
 	}
-	cfg := c.config(resourceId)
+	cfg := c.config(resourceID)
 	cfg.publicKey, err = utils.GetSSHPublicKey(sshKeyPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to create SSH key")
@@ -462,8 +461,8 @@ func (c *Cloud) createSubnetworkIfNotExists(ctx context.Context, subnetworkName,
 	return nil
 }
 
-func (c *Cloud) keyPairPath(resourceId string) (string, error) {
-	cfg := c.config(resourceId)
+func (c *Cloud) keyPairPath(resourceID string) (string, error) {
+	cfg := c.config(resourceID)
 	filePath, err := filepath.Abs(path.Join(cfg.pathToKeyPair, cfg.keyPair+".pem"))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get absolute key pair path")
@@ -471,25 +470,33 @@ func (c *Cloud) keyPairPath(resourceId string) (string, error) {
 	return filePath, nil
 }
 
-func (c *Cloud) RunCommand(ctx context.Context, resourceId string, instance cloud.Instance, cmd string) (string, error) {
-	sshConfig, err := c.sshConfig(resourceId)
+func (c *Cloud) RunCommand(ctx context.Context, resourceID string, instance cloud.Instance, cmd string) (string, error) {
+	sshConfig, err := c.sshConfig(resourceID)
 	if err != nil {
 		return "", errors.Wrap(err, "ssh config")
 	}
 	return utils.RunCommand(ctx, cmd, instance.PublicIpAddress, sshConfig)
 }
 
-func (c *Cloud) SendFile(ctx context.Context, resourceId, filePath, remotePath string, instance cloud.Instance) error {
-	sshConfig, err := c.sshConfig(resourceId)
+func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.Instance, filePath, remotePath string) error {
+	sshConfig, err := c.sshConfig(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "ssh config")
 	}
 	return utils.SendFile(ctx, filePath, remotePath, instance.PublicIpAddress, sshConfig)
 }
 
-func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) error {
-	cfg := c.config(resourceId)
-	list, err := c.listInstances(ctx, c.client.Instances, resourceId)
+func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.Instance, path string, editFunc func(io.ReadWriteSeeker) error) error {
+	sshConfig, err := c.sshConfig(resourceID)
+	if err != nil {
+		return errors.Wrap(err, "ssh config")
+	}
+	return utils.EditFile(ctx, instance.PublicIpAddress, path, sshConfig, editFunc)
+}
+
+func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) error {
+	cfg := c.config(resourceID)
+	list, err := c.listInstances(ctx, c.client.Instances, resourceID)
 	if err != nil {
 		return errors.Wrap(err, "failed to list instances")
 	}
@@ -612,8 +619,8 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceId string) err
 
 const user = "ubuntu"
 
-func (c *Cloud) sshConfig(resourceId string) (*ssh.ClientConfig, error) {
-	sshKeyPath, err := c.keyPairPath(resourceId)
+func (c *Cloud) sshConfig(resourceID string) (*ssh.ClientConfig, error) {
+	sshKeyPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return nil, errors.Wrap(err, "get key pair path")
 	}
