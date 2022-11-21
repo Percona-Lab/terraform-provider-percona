@@ -18,46 +18,41 @@ const (
 	galeraPort = "galera_port"
 )
 
-func Resource() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: createResource,
-		ReadContext:   readResource,
-		UpdateContext: updateResource,
-		DeleteContext: deleteResource,
-		Schema: utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
-			galeraPort: {
-				Type:     schema.TypeInt,
-				Optional: true,
-				Default:  4567,
-			},
-			resource.Instances: {
-				Type:     schema.TypeSet,
-				Computed: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"public_ip_address": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"private_ip_address": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
+type PerconaXtraDBCluster struct {
+}
+
+func (r *PerconaXtraDBCluster) Name() string {
+	return "pxc"
+}
+
+func (r *PerconaXtraDBCluster) Schema() map[string]*schema.Schema {
+	return utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
+		galeraPort: {
+			Type:     schema.TypeInt,
+			Optional: true,
+			Default:  4567,
+		},
+		resource.Instances: {
+			Type:     schema.TypeSet,
+			Computed: true,
+			Elem: &schema.Resource{
+				Schema: map[string]*schema.Schema{
+					"public_ip_address": {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+					"private_ip_address": {
+						Type:     schema.TypeString,
+						Computed: true,
 					},
 				},
 			},
-		}),
-	}
+		},
+	})
 }
 
-func createResource(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	c, ok := meta.(cloud.Cloud)
-	if !ok {
-		return diag.Errorf("failed to get cloud controller")
-	}
-
+func (r *PerconaXtraDBCluster) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
 	resourceID := utils.GetRandomString(resource.IDLength)
-
 	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
@@ -96,22 +91,17 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 	return nil
 }
 
-func readResource(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
+func (r *PerconaXtraDBCluster) Read(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
 	//TODO
 	return nil
 }
 
-func updateResource(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
+func (r *PerconaXtraDBCluster) Update(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
 	//TODO
 	return nil
 }
 
-func deleteResource(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	c, ok := meta.(cloud.Cloud)
-	if !ok {
-		return diag.Errorf("failed to get cloud controller")
-	}
-
+func (r *PerconaXtraDBCluster) Delete(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
 	resourceID := data.Id()
 	if resourceID == "" {
 		return diag.FromErr(errors.New("empty resource id"))

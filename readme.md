@@ -37,6 +37,7 @@ provider "percona" {
   profile                  = "default"                  # optional
   cloud                    = "aws"                      # required, supported values: "aws", "gcp"
   ignore_errors_on_destroy = true                       # optional, default: false
+  disable_telemetry        = true                       # optional, default: false
 }
 
 # GCP provider configuration

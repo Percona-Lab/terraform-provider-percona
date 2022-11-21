@@ -15,40 +15,34 @@ import (
 	"terraform-percona/internal/utils"
 )
 
-func Resource() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: createResource,
-		ReadContext:   readResource,
-		UpdateContext: updateResource,
-		DeleteContext: deleteResource,
-
-		Schema: utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{}),
-	}
+type PMM struct {
 }
 
-func createResource(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	c, ok := meta.(cloud.Cloud)
-	if !ok {
-		return diag.Errorf("failed to get cloud controller")
-	}
+func (r *PMM) Name() string {
+	return "pmm"
+}
 
-	resourceId := utils.GetRandomString(resource.IDLength)
+func (r *PMM) Schema() map[string]*schema.Schema {
+	return utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{})
+}
 
-	err := c.Configure(ctx, resourceId, data)
+func (r *PMM) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
+	resourceID := utils.GetRandomString(resource.IDLength)
+	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
-	data.SetId(resourceId)
-	err = c.CreateInfrastructure(ctx, resourceId)
+	data.SetId(resourceID)
+	err = c.CreateInfrastructure(ctx, resourceID)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
-	instances, err := c.CreateInstances(ctx, resourceId, 1)
+	instances, err := c.CreateInstances(ctx, resourceID, 1)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "create instances"))
 	}
 	instance := instances[0]
-	if _, err := c.RunCommand(ctx, resourceId, instance, cmd.Initial()); err != nil {
+	if _, err := c.RunCommand(ctx, resourceID, instance, cmd.Initial()); err != nil {
 		return diag.FromErr(errors.Wrap(err, "failed initial setup"))
 	}
 
@@ -56,22 +50,17 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 	return nil
 }
 
-func readResource(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
+func (r *PMM) Read(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
 	//TODO
 	return nil
 }
 
-func updateResource(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
+func (r *PMM) Update(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
 	//TODO
 	return nil
 }
 
-func deleteResource(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	c, ok := meta.(cloud.Cloud)
-	if !ok {
-		return diag.Errorf("failed to get cloud controller")
-	}
-
+func (r *PMM) Delete(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
 	resourceID := data.Id()
 	if resourceID == "" {
 		return diag.FromErr(errors.New("empty resource id"))

@@ -5,7 +5,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}'
+      - '-s -w -X terraform-percona/internal/version.Version=v{{.Version}}'
     goos:
       - freebsd
       - windows

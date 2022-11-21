@@ -19,57 +19,51 @@ const (
 	MyRocksInstall  = "myrocks_install"
 )
 
-func Resource() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: createResource,
-		ReadContext:   readResource,
-		UpdateContext: updateResource,
-		DeleteContext: deleteResource,
+type PerconaServer struct {
+}
 
-		Schema: utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
-			ReplicaPassword: {
-				Type:      schema.TypeString,
-				Optional:  true,
-				Default:   "replicaPassword",
-				Sensitive: true,
-			},
-			MyRocksInstall: {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  false,
-			},
-			resource.Instances: {
-				Type:     schema.TypeSet,
-				Computed: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"public_ip_address": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"private_ip_address": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"is_replica": {
-							Type:     schema.TypeBool,
-							Computed: true,
-						},
+func (r *PerconaServer) Name() string {
+	return "ps"
+}
+
+func (r *PerconaServer) Schema() map[string]*schema.Schema {
+	return utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
+		ReplicaPassword: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "replicaPassword",
+			Sensitive: true,
+		},
+		MyRocksInstall: {
+			Type:     schema.TypeBool,
+			Optional: true,
+			Default:  false,
+		},
+		resource.Instances: {
+			Type:     schema.TypeSet,
+			Computed: true,
+			Elem: &schema.Resource{
+				Schema: map[string]*schema.Schema{
+					"public_ip_address": {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+					"private_ip_address": {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+					"is_replica": {
+						Type:     schema.TypeBool,
+						Computed: true,
 					},
 				},
 			},
-		}),
-	}
+		},
+	})
 }
 
-func createResource(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	c, ok := meta.(cloud.Cloud)
-	if !ok {
-		return diag.Errorf("failed to get cloud controller")
-	}
-
+func (r *PerconaServer) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
 	resourceID := utils.GetRandomString(resource.IDLength)
-
 	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
@@ -118,23 +112,15 @@ func createResource(ctx context.Context, data *schema.ResourceData, meta interfa
 	tflog.Info(ctx, "Percona Server resource created", args)
 	return nil
 }
-
-func readResource(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
-	//TODO
+func (r *PerconaServer) Read(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
+	// TODO
 	return nil
 }
-
-func updateResource(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
-	//TODO
+func (r *PerconaServer) Update(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
+	// TODO
 	return nil
 }
-
-func deleteResource(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	c, ok := meta.(cloud.Cloud)
-	if !ok {
-		return diag.Errorf("failed to get cloud controller")
-	}
-
+func (r *PerconaServer) Delete(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
 	resourceID := data.Id()
 	if resourceID == "" {
 		return diag.Errorf("empty resource id")

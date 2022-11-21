@@ -15,9 +15,15 @@ type Cloud interface {
 	SendFile(ctx context.Context, resourceID string, instance Instance, filePath, remotePath string) error
 	EditFile(ctx context.Context, resourceID string, instance Instance, path string, editFunc func(io.ReadWriteSeeker) error) error
 	CreateInstances(ctx context.Context, resourceID string, size int64) ([]Instance, error)
+	Metadata() Metadata
 }
 
 type Instance struct {
 	PublicIpAddress  string
 	PrivateIpAddress string
+}
+
+type Metadata struct {
+	DisableTelemetry      bool
+	IgnoreErrorsOnDestroy bool
 }

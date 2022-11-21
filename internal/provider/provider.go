@@ -8,6 +8,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
+	"terraform-percona/internal/cloud"
+	"terraform-percona/internal/resource"
 	"terraform-percona/internal/resource/pmm"
 	"terraform-percona/internal/resource/ps"
 	"terraform-percona/internal/resource/pxc"
@@ -16,60 +18,85 @@ import (
 	"terraform-percona/internal/cloud/gcp"
 )
 
+const (
+	schemaKeyCloud = "cloud"
+
+	schemaKeyCloudRegion = "region"
+
+	schemaKeyAWSProfile = "profile"
+
+	schemaKeyGCPProject = "project"
+	schemaKeyGCPZone    = "zone"
+
+	schemaKeyIgnoreErrorsOnDestroy = "ignore_errors_on_destroy"
+	schemaKeyDisableTelemetry      = "disable_telemetry"
+)
+
 func New() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
-			"region": {
+			schemaKeyCloudRegion: {
 				Type:     schema.TypeString,
 				Required: true,
 			},
-			"project": {
+			schemaKeyGCPProject: {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"zone": {
+			schemaKeyGCPZone: {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			"profile": {
+			schemaKeyAWSProfile: {
 				Type:     schema.TypeString,
 				Optional: true,
 				Default:  "default",
 			},
-			"cloud": {
+			schemaKeyCloud: {
 				Type:     schema.TypeString,
 				Required: true,
 			},
-			"ignore_errors_on_destroy": {
+			schemaKeyIgnoreErrorsOnDestroy: {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
+			schemaKeyDisableTelemetry: {
 				Type:     schema.TypeBool,
 				Optional: true,
 				Default:  false,
 			},
 		},
-		ResourcesMap: map[string]*schema.Resource{
-			"percona_pxc": pxc.Resource(),
-			"percona_ps":  ps.Resource(),
-			"percona_pmm": pmm.Resource(),
-		},
+		ResourcesMap: resource.ResourcesMap(
+			new(ps.PerconaServer),
+			new(pmm.PMM),
+			new(pxc.PerconaXtraDBCluster),
+		),
 		ConfigureContextFunc: Configure,
 	}
 }
 
 func Configure(_ context.Context, data *schema.ResourceData) (interface{}, diag.Diagnostics) {
-	cloudOpt := data.Get("cloud").(string)
+	cloudOpt := data.Get(schemaKeyCloud).(string)
 	switch cloudOpt {
 	case "aws":
 		return &awsCloud.Cloud{
-			Region:                aws.String(data.Get("region").(string)),
-			Profile:               aws.String(data.Get("profile").(string)),
-			IgnoreErrorsOnDestroy: data.Get("ignore_errors_on_destroy").(bool),
+			Region:  aws.String(data.Get(schemaKeyCloudRegion).(string)),
+			Profile: aws.String(data.Get(schemaKeyAWSProfile).(string)),
+			Meta: cloud.Metadata{
+				IgnoreErrorsOnDestroy: data.Get(schemaKeyIgnoreErrorsOnDestroy).(bool),
+				DisableTelemetry:      data.Get(schemaKeyDisableTelemetry).(bool),
+			},
 		}, nil
 	case "gcp":
 		return &gcp.Cloud{
-			Project:               data.Get("project").(string),
-			Region:                data.Get("region").(string),
-			Zone:                  data.Get("zone").(string),
-			IgnoreErrorsOnDestroy: data.Get("ignore_errors_on_destroy").(bool),
+			Project: data.Get(schemaKeyGCPProject).(string),
+			Region:  data.Get(schemaKeyCloudRegion).(string),
+			Zone:    data.Get(schemaKeyGCPZone).(string),
+			Meta: cloud.Metadata{
+				IgnoreErrorsOnDestroy: data.Get(schemaKeyIgnoreErrorsOnDestroy).(bool),
+				DisableTelemetry:      data.Get(schemaKeyDisableTelemetry).(bool),
+			},
 		}, nil
 	}
 	return nil, diag.FromErr(errors.New("cloud is not supported"))

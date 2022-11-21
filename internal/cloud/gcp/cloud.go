@@ -34,7 +34,7 @@ type Cloud struct {
 	Region  string
 	Zone    string
 
-	IgnoreErrorsOnDestroy bool
+	Meta cloud.Metadata
 
 	client struct {
 		Instances   *compute.InstancesClient
@@ -48,15 +48,15 @@ type Cloud struct {
 }
 
 type resourceConfig struct {
-	keyPair        string
-	pathToKeyPair  string
-	machineType    string
-	publicKey      string
-	volumeType     string
-	volumeSize     int64
-	volumeIOPS     *int64
-	vpcName        string
-	subnetwork     string
+	keyPair       string
+	pathToKeyPair string
+	machineType   string
+	publicKey     string
+	volumeType    string
+	volumeSize    int64
+	volumeIOPS    *int64
+	vpcName       string
+	subnetwork    string
 }
 
 func (c *Cloud) config(resourceID string) *resourceConfig {
@@ -71,6 +71,10 @@ func (c *Cloud) config(resourceID string) *resourceConfig {
 	}
 	c.configsMu.Unlock()
 	return res
+}
+
+func (c *Cloud) Metadata() cloud.Metadata {
+	return c.Meta
 }
 
 func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
@@ -509,7 +513,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 				Zone:     c.Zone,
 			})
 			if err != nil {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrapf(err, "delete %s instance", instance.GetName())
 				} else {
 					tflog.Error(gCtx, "failed to delete instance", map[string]interface{}{
@@ -518,7 +522,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 				}
 			}
 			if err = op.Wait(ctx); err != nil {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrapf(err, "delete %s instance", instance.GetName())
 				} else {
 					tflog.Error(gCtx, "failed to wait instance deletion", map[string]interface{}{
@@ -542,7 +546,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if err != nil {
 			var gerr *googleapi.Error
 			if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to delete firewall")
 				}
 				tflog.Error(ctx, "failed to delete firewall", map[string]interface{}{
@@ -551,7 +555,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 			}
 		} else {
 			if err := op.Wait(ctx); err != nil {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to wait for firewall deletion")
 				}
 				tflog.Error(ctx, "failed to wait for firewall deletion", map[string]interface{}{
@@ -568,7 +572,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if err != nil {
 			var gerr *googleapi.Error
 			if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to delete subnetwork")
 				}
 				tflog.Error(ctx, "failed to delete subnetwork", map[string]interface{}{
@@ -577,7 +581,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 			}
 		} else {
 			if err := op.Wait(ctx); err != nil {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to wait for firewall deletion")
 				}
 				tflog.Error(ctx, "failed to wait for subnetwork deletion", map[string]interface{}{
@@ -593,7 +597,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if err != nil {
 			var gerr *googleapi.Error
 			if ok := errors.As(err, &gerr); (ok && gerr.Code != http.StatusNotFound) || !ok {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to delete network")
 				}
 				tflog.Error(ctx, "failed to delete network", map[string]interface{}{
@@ -602,7 +606,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 			}
 		} else {
 			if err := op.Wait(ctx); err != nil {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "failed to wait for firewall deletion")
 				}
 				tflog.Error(ctx, "failed to wait for network deletion", map[string]interface{}{

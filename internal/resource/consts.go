@@ -41,9 +41,10 @@ func DefaultSchema() map[string]*schema.Schema {
 			Required: true,
 		},
 		PathToKeyPairStorage: {
-			Type:     schema.TypeString,
-			Optional: true,
-			Default:  ".",
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   ".",
+			Sensitive: true,
 		},
 		InstanceType: {
 			Type:     schema.TypeString,

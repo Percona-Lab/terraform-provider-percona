@@ -23,7 +23,7 @@ type Cloud struct {
 	Region  *string
 	Profile *string
 
-	IgnoreErrorsOnDestroy bool
+	Meta cloud.Metadata
 
 	client  *ec2.EC2
 	session *session.Session
@@ -59,6 +59,10 @@ func (c *Cloud) config(resourceID string) *resourceConfig {
 	}
 	c.configsMu.Unlock()
 	return res
+}
+
+func (c *Cloud) Metadata() cloud.Metadata {
+	return c.Meta
 }
 
 func (c *Cloud) RunCommand(ctx context.Context, resourceID string, instance cloud.Instance, cmd string) (string, error) {

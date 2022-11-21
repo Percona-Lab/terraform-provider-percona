@@ -51,7 +51,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 			InstanceIds: instanceIDs,
 		})
 		if err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "failed to terminate instance")
 			}
 			tflog.Error(ctx, "failed to terminate instance", map[string]interface{}{
@@ -61,7 +61,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if err = c.client.WaitUntilInstanceTerminatedWithContext(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: instanceIDs,
 		}); err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "failed to wait for instance termination")
 			}
 			tflog.Error(ctx, "failed to wait for instance termination", map[string]interface{}{
@@ -76,7 +76,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 			RouteTableIds: []*string{aws.String(id)},
 		})
 		if err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "failed to describe route tables")
 			}
 			tflog.Error(ctx, "failed to describe route tables", map[string]interface{}{
@@ -98,7 +98,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if _, err = c.client.DeleteRouteTableWithContext(ctx, &ec2.DeleteRouteTableInput{
 			RouteTableId: aws.String(id),
 		}); err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "failed to delete route table")
 			}
 			tflog.Error(ctx, "failed to delete route table", map[string]interface{}{
@@ -112,7 +112,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if _, err = c.client.DeleteSubnetWithContext(ctx, &ec2.DeleteSubnetInput{
 			SubnetId: aws.String(id),
 		}); err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "failed to delete subnet")
 			}
 			tflog.Error(ctx, "failed to delete subnet", map[string]interface{}{
@@ -126,7 +126,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if _, err = c.client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 			GroupId: aws.String(id),
 		}); err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "failed to delete security group")
 			}
 			tflog.Error(ctx, "failed to delete security group", map[string]interface{}{
@@ -141,7 +141,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 			InternetGatewayIds: []*string{aws.String(id)},
 		})
 		if err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "describe internet gateway")
 			}
 			tflog.Error(ctx, "describe internet gateway", map[string]interface{}{
@@ -153,7 +153,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 				InternetGatewayId: aws.String(id),
 				VpcId:             attachment.VpcId,
 			}); err != nil {
-				if !c.IgnoreErrorsOnDestroy {
+				if !c.Meta.IgnoreErrorsOnDestroy {
 					return errors.Wrap(err, "detach internet gateway")
 				}
 				tflog.Error(ctx, "detach internet gateway", map[string]interface{}{
@@ -164,7 +164,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if _, err = c.client.DeleteInternetGatewayWithContext(ctx, &ec2.DeleteInternetGatewayInput{
 			InternetGatewayId: aws.String(id),
 		}); err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "delete internet gateway")
 			}
 			tflog.Error(ctx, "delete internet gateway", map[string]interface{}{
@@ -178,7 +178,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 		if _, err = c.client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
 			VpcId: aws.String(id),
 		}); err != nil {
-			if !c.IgnoreErrorsOnDestroy {
+			if !c.Meta.IgnoreErrorsOnDestroy {
 				return errors.Wrap(err, "delete vpc")
 			}
 			tflog.Error(ctx, "delete vpc", map[string]interface{}{
