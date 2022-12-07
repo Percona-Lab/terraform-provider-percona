@@ -3,7 +3,7 @@ module terraform-percona
 go 1.19
 
 require (
-	cloud.google.com/go/compute v1.12.1
+	cloud.google.com/go/compute v1.14.0
 	github.com/aws/aws-sdk-go v1.44.142
 	github.com/go-ini/ini v1.67.0
 	github.com/go-sql-driver/mysql v1.6.0
@@ -17,7 +17,7 @@ require (
 	golang.org/x/mod v0.7.0
 	golang.org/x/sync v0.1.0
 	google.golang.org/api v0.103.0
-	google.golang.org/genproto v0.0.0-20221118155620-16455021b5e6
+	google.golang.org/genproto v0.0.0-20221202195650-67e5cbc046fd
 )
 
 require (

@@ -44,11 +44,11 @@ func (r *PerconaServer) Schema() map[string]*schema.Schema {
 			Computed: true,
 			Elem: &schema.Resource{
 				Schema: map[string]*schema.Schema{
-					"public_ip_address": {
+					resource.InstancesSchemaKeyPublicIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
-					"private_ip_address": {
+					resource.InstancesSchemaKeyPrivateIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
@@ -84,9 +84,9 @@ func (r *PerconaServer) Create(ctx context.Context, data *schema.ResourceData, c
 	set := data.Get(resource.Instances).(*schema.Set)
 	for i, instance := range instances {
 		set.Add(map[string]interface{}{
-			"is_replica":         i == 0,
-			"public_ip_address":  instance.PublicIpAddress,
-			"private_ip_address": instance.PrivateIpAddress,
+			"is_replica":                         i != 0,
+			resource.InstancesSchemaKeyPublicIP:  instance.PublicIpAddress,
+			resource.InstancesSchemaKeyPrivateIP: instance.PrivateIpAddress,
 		})
 	}
 	err = data.Set(resource.Instances, set)

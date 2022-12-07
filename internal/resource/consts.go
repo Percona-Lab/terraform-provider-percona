@@ -125,3 +125,8 @@ const (
 	LogArgVersion    = "percona_version"
 	LogArgInstanceIP = "percona_instance_ip"
 )
+
+const (
+	InstancesSchemaKeyPublicIP  = "public_ip_address"
+	InstancesSchemaKeyPrivateIP = "private_ip_address"
+)

@@ -37,11 +37,11 @@ func (r *PerconaXtraDBCluster) Schema() map[string]*schema.Schema {
 			Computed: true,
 			Elem: &schema.Resource{
 				Schema: map[string]*schema.Schema{
-					"public_ip_address": {
+					resource.InstancesSchemaKeyPublicIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
-					"private_ip_address": {
+					resource.InstancesSchemaKeyPrivateIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
@@ -73,8 +73,8 @@ func (r *PerconaXtraDBCluster) Create(ctx context.Context, data *schema.Resource
 	set := data.Get(resource.Instances).(*schema.Set)
 	for _, instance := range instances {
 		set.Add(map[string]interface{}{
-			"public_ip_address":  instance.PublicIpAddress,
-			"private_ip_address": instance.PrivateIpAddress,
+			resource.InstancesSchemaKeyPublicIP:  instance.PublicIpAddress,
+			resource.InstancesSchemaKeyPrivateIP: instance.PrivateIpAddress,
 		})
 	}
 	err = data.Set(resource.Instances, set)

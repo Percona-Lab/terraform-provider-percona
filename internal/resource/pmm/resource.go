@@ -23,7 +23,24 @@ func (r *PMM) Name() string {
 }
 
 func (r *PMM) Schema() map[string]*schema.Schema {
-	return utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{})
+	return utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{
+		resource.Instances: {
+			Type:     schema.TypeSet,
+			Computed: true,
+			Elem: &schema.Resource{
+				Schema: map[string]*schema.Schema{
+					resource.InstancesSchemaKeyPublicIP: {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+					resource.InstancesSchemaKeyPrivateIP: {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+				},
+			},
+		},
+	})
 }
 
 func (r *PMM) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
