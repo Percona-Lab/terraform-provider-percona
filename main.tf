@@ -14,8 +14,10 @@ provider "percona" {
 #}
 
 resource "percona_ps" "ps" {
-  instance_type            = "t3.micro" # for AWS
-#  instance_type             = "e2-micro" # for GCP
+  count = 1
+
+  instance_type = "t3.micro" # for AWS
+  #instance_type             = "e2-micro" # for GCP
   key_pair_name            = "sshKey1"
   password                 = "password"
   replica_password         = "replicaPassword"
@@ -23,29 +25,18 @@ resource "percona_ps" "ps" {
   path_to_key_pair_storage = "/tmp/"
 }
 
-locals {
-  primary = one([for instance in percona_ps.ps.instances: instance if instance.is_replica == false])
-  replicas = [for instance in percona_ps.ps.instances: instance if instance.is_replica == true]
-}
-
-output "ps_primary_instance" {
-  value = {
-    public_ip = local.primary.public_ip_address
-    private_ip = local.primary.private_ip_address
-  }
-}
-
-output "ps_replica_instances" {
-  value = [for instance in local.replicas:
-  {
-    public_ip = instance.public_ip_address
-    private_ip = instance.private_ip_address
+output "ps_resources" {
+  value = [for resource in percona_ps.ps : {
+    resource_id = resource.id,
+    instances   = resource.instances,
   }]
 }
 
 resource "percona_pxc" "pxc" {
-  instance_type            = "t3.micro" # for AWS
-#  instance_type             = "e2-micro" # for GCP
+  count = 1
+
+  instance_type = "t3.micro" # for AWS
+  #instance_type             = "e2-micro" # for GCP
   key_pair_name            = "sshKey2"
   password                 = "password"
   cluster_size             = 2
@@ -53,6 +44,9 @@ resource "percona_pxc" "pxc" {
 }
 
 
-output "pxc_instances" {
-  value = [for instance in percona_pxc.pxc.instances: instance]
+output "pxc_resources" {
+  value = [for resource in percona_pxc.pxc : {
+    resource_id = resource.id,
+    instances   = resource.instances,
+  }]
 }
