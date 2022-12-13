@@ -79,18 +79,20 @@ func (c *Cloud) Metadata() cloud.Metadata {
 
 func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
 	cfg := c.config(resourceID)
-	cfg.keyPair = data.Get(resource.KeyPairName).(string)
-	cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
-	cfg.machineType = data.Get(resource.InstanceType).(string)
-	cfg.volumeType = data.Get(resource.VolumeType).(string)
-	if cfg.volumeType == "" {
-		cfg.volumeType = "pd-balanced"
+	if data != nil {
+		cfg.keyPair = data.Get(resource.KeyPairName).(string)
+		cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
+		cfg.machineType = data.Get(resource.InstanceType).(string)
+		cfg.volumeType = data.Get(resource.VolumeType).(string)
+		if cfg.volumeType == "" {
+			cfg.volumeType = "pd-balanced"
+		}
+		cfg.volumeSize = int64(data.Get(resource.VolumeSize).(int))
+		if volumeIOPS := int64(data.Get(resource.VolumeIOPS).(int)); volumeIOPS != 0 {
+			cfg.volumeIOPS = &volumeIOPS
+		}
+		cfg.vpcName = data.Get(resource.VPCName).(string)
 	}
-	cfg.volumeSize = int64(data.Get(resource.VolumeSize).(int))
-	if volumeIOPS := int64(data.Get(resource.VolumeIOPS).(int)); volumeIOPS != 0 {
-		cfg.volumeIOPS = &volumeIOPS
-	}
-	cfg.vpcName = data.Get(resource.VPCName).(string)
 	cfg.subnetwork = cfg.vpcName + "-sub"
 	if cfg.vpcName == "" || cfg.vpcName == "default" {
 		cfg.vpcName = "default"
@@ -494,6 +496,11 @@ func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.
 		return errors.Wrap(err, "ssh config")
 	}
 	return utils.EditFile(ctx, instance.PublicIpAddress, path, sshConfig, editFunc)
+}
+
+func (c *Cloud) Credentials() (cloud.Credentials, error) {
+	// TODO
+	return cloud.Credentials{}, errors.New("not implemented")
 }
 
 func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) error {

@@ -88,8 +88,15 @@ func ParsePMMAddress(link string) (string, error) {
 	if addr.Scheme == "" {
 		return "", errors.New("url scheme is empty")
 	}
-	if addr.Port() == "" {
-		addr.Host += ":443"
+	switch addr.Scheme {
+	case "http":
+		if addr.Port() == "" {
+			addr.Host += ":80"
+		}
+	case "https":
+		if addr.Port() == "" {
+			addr.Host += ":443"
+		}
 	}
 	if addr.User == nil || addr.User.String() == "" {
 		addr.User = url.UserPassword("admin", "admin")

@@ -100,6 +100,17 @@ resource "percona_pmm" "pmm" {
   volume_throughput        = 4000                                # optional, AWS only
   vpc_name                 = "percona_vpc_1"                     # optional
   vpc_id                   = "cGVyY29uYV92cGNfMQ=="              # optional, AWS only
+
+  rds_username             = "postgres"                          # optional, default: ""
+  rds_password             = "password"                          # optional, default: ""
+}
+
+resource "percona_pmm_rds" "pmm_rds" {
+  pmm_address              = "http://admin:admin@localhost"      # required
+  rds_id                   = "database-1"                        # required
+  rds_username             = "postgres"                          # required
+  rds_password             = "password"                          # required
+  rds_pmm_user_password    = "password"                          # optional, default: "password"
 }
 ```
 

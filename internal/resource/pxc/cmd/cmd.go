@@ -61,10 +61,6 @@ func InstallPMMClient(addr string) string {
 	sudo pmm-admin config --server-insecure-tls --server-url="%s"`, addr)
 }
 
-func CreatePMMUser(rootPassword, pmmPassword string) string {
-	return fmt.Sprintf(`mysql -uroot -p%s -e "CREATE USER IF NOT EXISTS 'pmm'@'localhost' IDENTIFIED BY '%s' WITH MAX_USER_CONNECTIONS 10; GRANT SELECT, PROCESS, REPLICATION CLIENT, RELOAD, BACKUP_ADMIN ON *.* TO 'pmm'@'localhost'; FLUSH PRIVILEGES;"`, rootPassword, pmmPassword)
-}
-
 func AddServiceToPMM(username, password string, port int) string {
 	return fmt.Sprintf(`pmm-admin add mysql --query-source=slowlog --username="%s" --password="%s" --port=%d`, username, password, port)
 }

@@ -16,6 +16,7 @@ type Cloud interface {
 	EditFile(ctx context.Context, resourceID string, instance Instance, path string, editFunc func(io.ReadWriteSeeker) error) error
 	CreateInstances(ctx context.Context, resourceID string, size int64) ([]Instance, error)
 	Metadata() Metadata
+	Credentials() (Credentials, error)
 }
 
 type Instance struct {
@@ -26,4 +27,9 @@ type Instance struct {
 type Metadata struct {
 	DisableTelemetry      bool
 	IgnoreErrorsOnDestroy bool
+}
+
+type Credentials struct {
+	AccessKey string
+	SecretKey string
 }

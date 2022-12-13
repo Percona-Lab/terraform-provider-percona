@@ -2,6 +2,7 @@ package pmm
 
 import (
 	"context"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -11,6 +12,7 @@ import (
 	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/cloud/aws"
 	"terraform-percona/internal/resource"
+	"terraform-percona/internal/resource/pmm/api"
 	"terraform-percona/internal/resource/pmm/cmd"
 	"terraform-percona/internal/utils"
 )
@@ -24,6 +26,24 @@ func (r *PMM) Name() string {
 
 func (r *PMM) Schema() map[string]*schema.Schema {
 	return utils.MergeSchemas(resource.DefaultSchema(), aws.Schema(), map[string]*schema.Schema{
+		schemaKeyRDSUsername: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "",
+			Sensitive: true,
+		},
+		schemaKeyRDSPassword: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "",
+			Sensitive: true,
+		},
+		schemaKeyRDSPMMUserPassword: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "password",
+			Sensitive: true,
+		},
 		resource.Instances: {
 			Type:     schema.TypeSet,
 			Computed: true,
@@ -61,6 +81,54 @@ func (r *PMM) Create(ctx context.Context, data *schema.ResourceData, c cloud.Clo
 	instance := instances[0]
 	if _, err := c.RunCommand(ctx, resourceID, instance, cmd.Initial()); err != nil {
 		return diag.FromErr(errors.Wrap(err, "failed initial setup"))
+	}
+
+	set := data.Get(resource.Instances).(*schema.Set)
+	for _, instance := range instances {
+		set.Add(map[string]interface{}{
+			resource.InstancesSchemaKeyPublicIP:  instance.PublicIpAddress,
+			resource.InstancesSchemaKeyPrivateIP: instance.PrivateIpAddress,
+		})
+	}
+	err = data.Set(resource.Instances, set)
+	if err != nil {
+		return diag.FromErr(errors.Wrap(err, "can't set instances"))
+	}
+
+	rdsUsername := data.Get(schemaKeyRDSUsername).(string)
+	rdsPassword := data.Get(schemaKeyRDSPassword).(string)
+	rdsPMMUserPassword := data.Get(schemaKeyRDSPMMUserPassword).(string)
+
+	if rdsUsername != "" && rdsPassword != "" {
+		pmmAddress, err := utils.ParsePMMAddress("http://" + instance.PublicIpAddress)
+		if err != nil {
+			return diag.FromErr(errors.Wrap(err, "failed to parse pmm address"))
+		}
+		pmmClient, err := api.NewClient(pmmAddress)
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		creds, err := c.Credentials()
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		time.Sleep(time.Second * 30)
+		instances, err := pmmClient.RDSDiscover(creds.AccessKey, creds.SecretKey)
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		for _, instance := range instances {
+			if err := pmmClient.AddRDSInstanceToPMM(ctx, resourceID, &instance, creds, rdsUsername, rdsPassword, rdsPMMUserPassword); err != nil {
+				tflog.Error(ctx, "failed to add RDS instance to PMM", map[string]interface{}{
+					"percona_rds_id": instance.InstanceID,
+					"error":          err,
+				})
+				continue
+			}
+			tflog.Info(ctx, "RDS instance added to PMM", map[string]interface{}{
+				"percona_rds_id": instance.InstanceID,
+			})
+		}
 	}
 
 	tflog.Info(ctx, "PMM resource created")

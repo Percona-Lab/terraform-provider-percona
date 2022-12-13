@@ -11,7 +11,7 @@ import (
 
 const (
 	IDLength              = 20
-	TagName               = "percona-cluster-stack-id"
+	TagName               = "percona_terraform_resource_id"
 	AllAddressesCidrBlock = "0.0.0.0/0"
 	DefaultVpcCidrBlock   = "10.0.0.0/16"
 )

@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"terraform-percona/internal/cloud"
+	internaldb "terraform-percona/internal/db"
+	"terraform-percona/internal/db/mysql"
 	"terraform-percona/internal/resource"
 	"terraform-percona/internal/resource/pxc/cmd"
 	"terraform-percona/internal/utils"
@@ -89,6 +91,14 @@ func (m *manager) Create(ctx context.Context) ([]cloud.Instance, error) {
 			return nil, errors.Wrap(err, "run command pxc start")
 		}
 		if m.pmmAddress != "" {
+			db, err := m.newClient(instance, internaldb.UserRoot, m.password)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to create new mysql client")
+			}
+			defer db.Close()
+			if err := db.CreatePMMUser(ctx, m.pmmPassword); err != nil {
+				return nil, errors.Wrap(err, "failed to create pmm user")
+			}
 			addr, err := utils.ParsePMMAddress(m.pmmAddress)
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to parse pmm address")
@@ -96,10 +106,6 @@ func (m *manager) Create(ctx context.Context) ([]cloud.Instance, error) {
 			_, err = m.runCommand(ctx, instance, cmd.InstallPMMClient(addr))
 			if err != nil {
 				return nil, errors.Wrap(err, "install pmm client")
-			}
-			_, err = m.runCommand(ctx, instance, cmd.CreatePMMUser(m.password, m.pmmPassword))
-			if err != nil {
-				return nil, errors.Wrap(err, "create pmm user")
 			}
 			err = m.editDefaultCfg(ctx, instance, "mysqld", map[string]string{
 				// Slow query log
@@ -196,4 +202,8 @@ const (
 
 func (m *manager) editDefaultCfg(ctx context.Context, instance cloud.Instance, section string, keysAndValues map[string]string) error {
 	return m.cloud.EditFile(ctx, m.resourceID, instance, defaultMysqlConfigPath, utils.SetIniFields(section, keysAndValues))
+}
+
+func (m *manager) newClient(instance cloud.Instance, user, pass string) (*mysql.DB, error) {
+	return mysql.NewClient(instance.PublicIpAddress+":"+strconv.Itoa(m.mysqlPort), user, pass)
 }

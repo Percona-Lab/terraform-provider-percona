@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 
+	"terraform-percona/internal/cloud"
 	"terraform-percona/internal/resource"
 	"terraform-percona/internal/utils"
 )
@@ -51,27 +52,28 @@ func (c *Cloud) sourceImage(ctx context.Context) (*string, error) {
 
 func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
 	cfg := c.config(resourceID)
-	cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
-	cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
-	cfg.instanceType = aws.String(data.Get(resource.InstanceType).(string))
-	cfg.volumeType = aws.String(data.Get(resource.VolumeType).(string))
-	if aws.StringValue(cfg.volumeType) == "" {
-		cfg.volumeType = aws.String("gp2")
-	}
-	cfg.volumeSize = aws.Int64(int64(data.Get(resource.VolumeSize).(int)))
-	if v, ok := data.Get(resource.VolumeIOPS).(int); ok {
-		if v != 0 {
-			cfg.volumeIOPS = aws.Int64(int64(v))
+	if data != nil {
+		cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
+		cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
+		cfg.instanceType = aws.String(data.Get(resource.InstanceType).(string))
+		cfg.volumeType = aws.String(data.Get(resource.VolumeType).(string))
+		if aws.StringValue(cfg.volumeType) == "" {
+			cfg.volumeType = aws.String("gp2")
 		}
-	}
-	if v, ok := data.Get(volumeThroughput).(int); ok {
-		if v != 0 {
-			cfg.volumeThroughput = aws.Int64(int64(v))
+		cfg.volumeSize = aws.Int64(int64(data.Get(resource.VolumeSize).(int)))
+		if v, ok := data.Get(resource.VolumeIOPS).(int); ok {
+			if v != 0 {
+				cfg.volumeIOPS = aws.Int64(int64(v))
+			}
 		}
+		if v, ok := data.Get(volumeThroughput).(int); ok {
+			if v != 0 {
+				cfg.volumeThroughput = aws.Int64(int64(v))
+			}
+		}
+		cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
+		cfg.vpcId = aws.String(data.Get(vpcID).(string))
 	}
-	cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
-	cfg.vpcId = aws.String(data.Get(vpcID).(string))
-
 	var err error
 	c.session, err = session.NewSession(&aws.Config{
 		Region: c.Region,
@@ -85,6 +87,17 @@ func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.R
 		return errors.Wrap(err, "failed to get latest Ubuntu 20.04 ami")
 	}
 	return nil
+}
+
+func (c *Cloud) Credentials() (cloud.Credentials, error) {
+	creds, err := c.session.Config.Credentials.Get()
+	if err != nil {
+		return cloud.Credentials{}, errors.Wrap(err, "failed to get credentials")
+	}
+	return cloud.Credentials{
+		AccessKey: creds.AccessKeyID,
+		SecretKey: creds.SecretAccessKey,
+	}, nil
 }
 
 func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) error {

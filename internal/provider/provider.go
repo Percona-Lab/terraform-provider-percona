@@ -71,6 +71,7 @@ func New() *schema.Provider {
 			new(ps.PerconaServer),
 			new(pmm.PMM),
 			new(pxc.PerconaXtraDBCluster),
+			new(pmm.RDS),
 		),
 		ConfigureContextFunc: Configure,
 	}
@@ -80,16 +81,16 @@ func Configure(_ context.Context, data *schema.ResourceData) (interface{}, diag.
 	cloudOpt := data.Get(schemaKeyCloud).(string)
 	switch cloudOpt {
 	case "aws":
-		return &awsCloud.Cloud{
+		return cloud.Cloud(&awsCloud.Cloud{
 			Region:  aws.String(data.Get(schemaKeyCloudRegion).(string)),
 			Profile: aws.String(data.Get(schemaKeyAWSProfile).(string)),
 			Meta: cloud.Metadata{
 				IgnoreErrorsOnDestroy: data.Get(schemaKeyIgnoreErrorsOnDestroy).(bool),
 				DisableTelemetry:      data.Get(schemaKeyDisableTelemetry).(bool),
 			},
-		}, nil
+		}), nil
 	case "gcp":
-		return &gcp.Cloud{
+		return cloud.Cloud(&gcp.Cloud{
 			Project: data.Get(schemaKeyGCPProject).(string),
 			Region:  data.Get(schemaKeyCloudRegion).(string),
 			Zone:    data.Get(schemaKeyGCPZone).(string),
@@ -97,7 +98,7 @@ func Configure(_ context.Context, data *schema.ResourceData) (interface{}, diag.
 				IgnoreErrorsOnDestroy: data.Get(schemaKeyIgnoreErrorsOnDestroy).(bool),
 				DisableTelemetry:      data.Get(schemaKeyDisableTelemetry).(bool),
 			},
-		}, nil
+		}), nil
 	}
 	return nil, diag.FromErr(errors.New("cloud is not supported"))
 }

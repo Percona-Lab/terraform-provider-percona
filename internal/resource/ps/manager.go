@@ -11,6 +11,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"terraform-percona/internal/cloud"
+	internaldb "terraform-percona/internal/db"
+	"terraform-percona/internal/db/mysql"
 	"terraform-percona/internal/resource"
 	"terraform-percona/internal/resource/ps/cmd"
 	"terraform-percona/internal/utils"
@@ -75,7 +77,7 @@ func (m *manager) createCluster(ctx context.Context) ([]cloud.Instance, error) {
 			if err != nil {
 				return errors.Wrap(err, "restart mysql")
 			}
-			db, err := m.newClient(instance, userRoot, m.pass)
+			db, err := m.newClient(instance, internaldb.UserRoot, m.pass)
 			if err != nil {
 				return errors.Wrap(err, "failed to establish sql connection")
 			}
@@ -106,7 +108,8 @@ func (m *manager) createCluster(ctx context.Context) ([]cloud.Instance, error) {
 				if err != nil {
 					return errors.Wrap(err, "install pmm client")
 				}
-				_, err = m.runCommand(gCtx, instance, cmd.CreatePMMUser(m.pass, m.pmmPassword))
+
+				err = db.CreatePMMUser(gCtx, m.pmmPassword)
 				if err != nil {
 					return errors.Wrap(err, "create pmm user")
 				}
@@ -184,7 +187,7 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 	if _, err := m.runCommand(ctx, masterInstance, cmd.CreateReplicaUser(m.pass, m.replicaPass, m.port)); err != nil {
 		return errors.Wrap(err, "create replica user")
 	}
-	db, err := m.newClient(masterInstance, userRoot, m.pass)
+	db, err := m.newClient(masterInstance, internaldb.UserRoot, m.pass)
 	if err != nil {
 		return errors.Wrap(err, "new client")
 	}
@@ -210,7 +213,7 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 			return errors.Wrap(err, "restart mysql")
 		}
 		if serverID > 1 {
-			binlogName, binlogPos, err := db.binlogFileAndPosition(ctx)
+			binlogName, binlogPos, err := db.BinlogFileAndPosition(ctx)
 			if err != nil {
 				return errors.Wrap(err, "get binlog name and position")
 			}
@@ -229,12 +232,12 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 }
 
 func (m *manager) startReplica(ctx context.Context, instance cloud.Instance, masterIP, binlogName string, binlogPos int64) error {
-	db, err := m.newClient(instance, userRoot, m.pass)
+	db, err := m.newClient(instance, internaldb.UserRoot, m.pass)
 	if err != nil {
 		return errors.Wrap(err, "failed to establish sql connection")
 	}
 	defer db.Close()
-	if err := db.ChangeReplicationSource(ctx, masterIP, m.port, userReplica, m.replicaPass, binlogName, binlogPos); err != nil {
+	if err := db.ChangeReplicationSource(ctx, masterIP, m.port, internaldb.UserReplica, m.replicaPass, binlogName, binlogPos); err != nil {
 		return errors.Wrap(err, "change replication source")
 	}
 	if err := db.StartReplica(ctx); err != nil {
@@ -257,4 +260,8 @@ func (m *manager) versionList(ctx context.Context, instance cloud.Instance) ([]s
 
 func (m *manager) runCommand(ctx context.Context, instance cloud.Instance, cmd string) (string, error) {
 	return m.cloud.RunCommand(ctx, m.resourceID, instance, cmd)
+}
+
+func (m *manager) newClient(instance cloud.Instance, user, pass string) (*mysql.DB, error) {
+	return mysql.NewClient(instance.PublicIpAddress+":"+strconv.Itoa(m.port), user, pass)
 }
