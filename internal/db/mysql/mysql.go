@@ -13,25 +13,39 @@ import (
 
 type DB struct {
 	*sql.DB
+	cfg mysql.Config
 }
 
 func NewClient(host, user, pass string) (*DB, error) {
-	cfg := mysql.Config{
-		User:   user,
-		Passwd: pass,
-		Net:    "tcp",
-		Addr:   host,
-		Params: map[string]string{
-			"interpolateParams": "true",
+	db := &DB{
+		cfg: mysql.Config{
+			User:   user,
+			Passwd: pass,
+			Net:    "tcp",
+			Addr:   host,
+			Params: map[string]string{
+				"interpolateParams": "true",
+			},
+			Timeout:              time.Second * 135,
+			ReadTimeout:          time.Second * 135,
+			WriteTimeout:         time.Second * 135,
+			AllowNativePasswords: true,
 		},
-		Timeout:              time.Second * 5,
-		AllowNativePasswords: true,
 	}
-	db, err := sql.Open("mysql", cfg.FormatDSN())
+	err := db.Open()
 	if err != nil {
-		return nil, errors.Wrap(err, "sql open")
+		return nil, errors.Wrap(err, "failed to open connection")
 	}
-	return &DB{DB: db}, nil
+	return db, nil
+}
+
+func (db *DB) Open() error {
+	sqldb, err := sql.Open("mysql", db.cfg.FormatDSN())
+	if err != nil {
+		return errors.Wrap(err, "sql open")
+	}
+	db.DB = sqldb
+	return nil
 }
 
 func (db *DB) InstallPerconaServerUDF(ctx context.Context) error {

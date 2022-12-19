@@ -184,14 +184,14 @@ func (m *manager) installPerconaServer(ctx context.Context, instance cloud.Insta
 
 func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance) error {
 	masterInstance := instances[0]
-	if _, err := m.runCommand(ctx, masterInstance, cmd.CreateReplicaUser(m.pass, m.replicaPass, m.port)); err != nil {
-		return errors.Wrap(err, "create replica user")
-	}
 	db, err := m.newClient(masterInstance, internaldb.UserRoot, m.pass)
 	if err != nil {
 		return errors.Wrap(err, "new client")
 	}
 	defer db.Close()
+	if err := db.CreateReplicaUser(ctx, m.replicaPass); err != nil {
+		return errors.Wrap(err, "create replica user")
+	}
 	for i, instance := range instances {
 		serverID := i + 1
 		if len(instances) > 1 {
@@ -208,11 +208,19 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 				return errors.Wrap(err, "edit default cfg for replication")
 			}
 		}
+		if serverID == 1 {
+			db.Close()
+		}
 		_, err := m.runCommand(ctx, instance, cmd.Restart())
 		if err != nil {
 			return errors.Wrap(err, "restart mysql")
 		}
-		if serverID > 1 {
+		switch serverID {
+		case 1:
+			if err := db.Open(); err != nil {
+				return errors.Wrap(err, "failed to reopen connection")
+			}
+		default:
 			binlogName, binlogPos, err := db.BinlogFileAndPosition(ctx)
 			if err != nil {
 				return errors.Wrap(err, "get binlog name and position")

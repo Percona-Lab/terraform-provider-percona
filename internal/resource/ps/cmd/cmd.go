@@ -22,11 +22,6 @@ func InstallPerconaServer(password, version string, port int) string {
 	`, version, version, version, password)
 }
 
-func CreateReplicaUser(rootPassword, replicaPassword string, port int) string {
-	return fmt.Sprintf(`mysql -uroot -p%s -e "CREATE USER 'replica_user'@'%%' IDENTIFIED WITH mysql_native_password BY '%s'; GRANT REPLICATION SLAVE ON *.* TO 'replica_user'@'%%'; FLUSH PRIVILEGES;";
-	`, rootPassword, replicaPassword)
-}
-
 func Configure(password string) string {
 	return fmt.Sprintf(`
 	#!/usr/bin/env bash

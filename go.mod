@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/compute v1.14.0
 	github.com/aws/aws-sdk-go v1.44.142
 	github.com/go-ini/ini v1.67.0
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/go-sql-driver/mysql v1.7.0
 	github.com/googleapis/gax-go/v2 v2.7.0
 	github.com/hashicorp/go-cty v1.4.1-0.20200414143053-d3edf31b6320
 	github.com/hashicorp/terraform-plugin-log v0.7.0
