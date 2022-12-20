@@ -19,7 +19,7 @@ func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) err
 	getResourcesOutput, err := resourceGroupingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 		TagFilters: []*resourcegroupstaggingapi.TagFilter{
 			{
-				Key:    aws.String(resource.TagName),
+				Key:    aws.String(resource.LabelKeyResourceID),
 				Values: []*string{aws.String(resourceID)},
 			},
 		},

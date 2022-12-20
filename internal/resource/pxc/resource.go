@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	galeraPort = "galera_port"
+	schemaKeyGaleraPort = "galera_port"
 )
 
 type PerconaXtraDBCluster struct {
@@ -27,21 +27,21 @@ func (r *PerconaXtraDBCluster) Name() string {
 
 func (r *PerconaXtraDBCluster) Schema() map[string]*schema.Schema {
 	return utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
-		galeraPort: {
+		schemaKeyGaleraPort: {
 			Type:     schema.TypeInt,
 			Optional: true,
 			Default:  4567,
 		},
-		resource.Instances: {
+		resource.SchemaKeyInstances: {
 			Type:     schema.TypeSet,
 			Computed: true,
 			Elem: &schema.Resource{
 				Schema: map[string]*schema.Schema{
-					resource.InstancesSchemaKeyPublicIP: {
+					resource.SchemaKeyInstancesPublicIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
-					resource.InstancesSchemaKeyPrivateIP: {
+					resource.SchemaKeyInstancesPrivateIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
@@ -52,7 +52,7 @@ func (r *PerconaXtraDBCluster) Schema() map[string]*schema.Schema {
 }
 
 func (r *PerconaXtraDBCluster) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
-	resourceID := utils.GetRandomString(resource.IDLength)
+	resourceID := utils.GenerateResourceID()
 	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
@@ -70,14 +70,14 @@ func (r *PerconaXtraDBCluster) Create(ctx context.Context, data *schema.Resource
 		return diag.FromErr(errors.Wrap(err, "can't create pxc cluster"))
 	}
 
-	set := data.Get(resource.Instances).(*schema.Set)
+	set := data.Get(resource.SchemaKeyInstances).(*schema.Set)
 	for _, instance := range instances {
 		set.Add(map[string]interface{}{
-			resource.InstancesSchemaKeyPublicIP:  instance.PublicIpAddress,
-			resource.InstancesSchemaKeyPrivateIP: instance.PrivateIpAddress,
+			resource.SchemaKeyInstancesPublicIP:  instance.PublicIpAddress,
+			resource.SchemaKeyInstancesPrivateIP: instance.PrivateIpAddress,
 		})
 	}
-	err = data.Set(resource.Instances, set)
+	err = data.Set(resource.SchemaKeyInstances, set)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't set instances"))
 	}

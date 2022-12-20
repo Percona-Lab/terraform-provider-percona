@@ -64,8 +64,8 @@ func (db *DB) InstallPerconaServerUDF(ctx context.Context) error {
 	return nil
 }
 
-func (db *DB) ChangeReplicationSource(ctx context.Context, sourceHost string, sourcePort int, sourceUser, sourcePassword, sourceLogFile string, sourceLogPos int64) error {
-	_, err := db.ExecContext(ctx, `CHANGE REPLICATION SOURCE TO SOURCE_HOST=?, SOURCE_PORT=?, SOURCE_USER=?, SOURCE_PASSWORD=?, SOURCE_LOG_FILE=?, SOURCE_LOG_POS=?`, sourceHost, sourcePort, sourceUser, sourcePassword, sourceLogFile, sourceLogPos)
+func (db *DB) ChangeReplicationSource(ctx context.Context, sourceHost string, sourcePort int, sourceUser, sourcePassword string) error {
+	_, err := db.ExecContext(ctx, `CHANGE REPLICATION SOURCE TO SOURCE_HOST=?, SOURCE_PORT=?, SOURCE_USER=?, SOURCE_PASSWORD=?, SOURCE_AUTO_POSITION=1`, sourceHost, sourcePort, sourceUser, sourcePassword)
 	if err != nil {
 		return errors.Wrap(err, "exec")
 	}
@@ -78,22 +78,6 @@ func (db *DB) StartReplica(ctx context.Context) error {
 		return errors.Wrap(err, "exec")
 	}
 	return nil
-}
-
-func (db *DB) BinlogFileAndPosition(ctx context.Context) (string, int64, error) {
-	var (
-		file            string
-		position        int64
-		binlogDoDB      string
-		binlogIgnoreDB  string
-		executedGtidSet string
-	)
-	row := db.QueryRowContext(ctx, "SHOW MASTER STATUS")
-	row.Scan(&file, &position, &binlogDoDB, &binlogIgnoreDB, &executedGtidSet)
-	if err := row.Err(); err != nil {
-		return "", 0, errors.Wrap(err, "show master status")
-	}
-	return file, position, nil
 }
 
 func (db *DB) createUser(ctx context.Context, user, host, pass string) error {
@@ -147,6 +131,24 @@ func (db *DB) CreatePMMUserForRDS(ctx context.Context, password string) error {
 	}
 	if _, err := db.ExecContext(ctx, "GRANT SELECT, UPDATE, DELETE, DROP ON performance_schema.* TO ?@?", internaldb.UserPMM, "%"); err != nil {
 		return errors.Wrap(err, "grant replication slave")
+	}
+	return nil
+}
+
+func (db *DB) CreateOrchestratorUser(ctx context.Context, password string, isGroupReplication bool) error {
+	if err := db.createUser(ctx, internaldb.UserOrchestrator, "%", password); err != nil {
+		return errors.Wrap(err, "create user")
+	}
+	if _, err := db.ExecContext(ctx, "GRANT SELECT ON meta.* TO ?@?", internaldb.UserOrchestrator, "%"); err != nil {
+		return errors.Wrap(err, "grant select")
+	}
+	if _, err := db.ExecContext(ctx, "GRANT SUPER, PROCESS, REPLICATION SLAVE, REPLICATION CLIENT, RELOAD ON *.* TO ?@?", internaldb.UserOrchestrator, "%"); err != nil {
+		return errors.Wrap(err, "grant select")
+	}
+	if isGroupReplication {
+		if _, err := db.ExecContext(ctx, "GRANT SELECT ON performance_schema.replication_group_members TO ?@?", internaldb.UserOrchestrator, "%"); err != nil {
+			return errors.Wrap(err, "grant select")
+		}
 	}
 	return nil
 }

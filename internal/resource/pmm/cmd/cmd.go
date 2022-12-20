@@ -3,6 +3,7 @@ package cmd
 func Initial() string {
 	return `#!/usr/bin/env bash
 		sudo apt-get update
+		sudo apt-get upgrade -y
 		sudo apt-get install -y \
 			ca-certificates \
 			curl \

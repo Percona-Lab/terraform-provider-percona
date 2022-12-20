@@ -44,16 +44,16 @@ func (r *PMM) Schema() map[string]*schema.Schema {
 			Default:   "password",
 			Sensitive: true,
 		},
-		resource.Instances: {
+		resource.SchemaKeyInstances: {
 			Type:     schema.TypeSet,
 			Computed: true,
 			Elem: &schema.Resource{
 				Schema: map[string]*schema.Schema{
-					resource.InstancesSchemaKeyPublicIP: {
+					resource.SchemaKeyInstancesPublicIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
-					resource.InstancesSchemaKeyPrivateIP: {
+					resource.SchemaKeyInstancesPrivateIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
@@ -64,7 +64,7 @@ func (r *PMM) Schema() map[string]*schema.Schema {
 }
 
 func (r *PMM) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
-	resourceID := utils.GetRandomString(resource.IDLength)
+	resourceID := utils.GenerateResourceID()
 	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
@@ -74,7 +74,7 @@ func (r *PMM) Create(ctx context.Context, data *schema.ResourceData, c cloud.Clo
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create cloud infrastructure"))
 	}
-	instances, err := c.CreateInstances(ctx, resourceID, 1)
+	instances, err := c.CreateInstances(ctx, resourceID, 1, nil)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "create instances"))
 	}
@@ -83,14 +83,14 @@ func (r *PMM) Create(ctx context.Context, data *schema.ResourceData, c cloud.Clo
 		return diag.FromErr(errors.Wrap(err, "failed initial setup"))
 	}
 
-	set := data.Get(resource.Instances).(*schema.Set)
+	set := data.Get(resource.SchemaKeyInstances).(*schema.Set)
 	for _, instance := range instances {
 		set.Add(map[string]interface{}{
-			resource.InstancesSchemaKeyPublicIP:  instance.PublicIpAddress,
-			resource.InstancesSchemaKeyPrivateIP: instance.PrivateIpAddress,
+			resource.SchemaKeyInstancesPublicIP:  instance.PublicIpAddress,
+			resource.SchemaKeyInstancesPrivateIP: instance.PrivateIpAddress,
 		})
 	}
-	err = data.Set(resource.Instances, set)
+	err = data.Set(resource.SchemaKeyInstances, set)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't set instances"))
 	}

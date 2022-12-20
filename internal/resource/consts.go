@@ -10,60 +10,63 @@ import (
 )
 
 const (
-	IDLength              = 20
-	TagName               = "percona_terraform_resource_id"
-	AllAddressesCidrBlock = "0.0.0.0/0"
-	DefaultVpcCidrBlock   = "10.0.0.0/16"
+	LabelKeyInstanceType = "percona_terraform_instance_type"
+	LabelKeyResourceID   = "percona_terraform_resource_id"
 )
 
 const (
-	KeyPairName          = "key_pair_name"
-	PathToKeyPairStorage = "path_to_key_pair_storage"
-	ClusterSize          = "cluster_size"
-	ConfigFilePath       = "config_file_path"
-	InstanceType         = "instance_type"
-	Version              = "version"
-	VolumeType           = "volume_type"
-	VolumeSize           = "volume_size"
-	VolumeIOPS           = "volume_iops"
-	VPCName              = "vpc_name"
-	Instances            = "instances"
-	Port                 = "port"
-	RootPassword         = "password"
-	PMMAddress           = "pmm_address"
-	PMMPassword          = "pmm_password"
+	LabelValueInstanceTypeMySQL        = "mysql"
+	LabelValueInstanceTypeOrchestrator = "orchestrator"
+)
+
+const (
+	SchemaKeyKeyPairName          = "key_pair_name"
+	SchemaKeyPathToKeyPairStorage = "path_to_key_pair_storage"
+	SchemaKeyClusterSize          = "cluster_size"
+	SchemaKeyConfigFilePath       = "config_file_path"
+	SchemaKeyInstanceType         = "instance_type"
+	SchemaKeyVersion              = "version"
+	SchemaKeyVolumeType           = "volume_type"
+	SchemaKeyVolumeSize           = "volume_size"
+	SchemaKeyVolumeIOPS           = "volume_iops"
+	SchemaKeyVPCName              = "vpc_name"
+	SchemaKeyInstances            = "instances"
+	SchemaKeyPort                 = "port"
+	SchemaKeyRootPassword         = "password"
+	SchemaKeyPMMAddress           = "pmm_address"
+	SchemaKeyPMMPassword          = "pmm_password"
 )
 
 func DefaultSchema() map[string]*schema.Schema {
 	return map[string]*schema.Schema{
-		KeyPairName: {
+		SchemaKeyKeyPairName: {
 			Type:     schema.TypeString,
 			Required: true,
 		},
-		PathToKeyPairStorage: {
+		SchemaKeyPathToKeyPairStorage: {
 			Type:      schema.TypeString,
 			Optional:  true,
 			Default:   ".",
 			Sensitive: true,
 		},
-		InstanceType: {
+		SchemaKeyInstanceType: {
 			Type:     schema.TypeString,
 			Required: true,
 		},
-		VolumeType: {
+		SchemaKeyVolumeType: {
 			Type:     schema.TypeString,
 			Optional: true,
 		},
-		VolumeSize: {
+		SchemaKeyVolumeSize: {
 			Type:     schema.TypeInt,
 			Optional: true,
 			Default:  20,
 		},
-		VolumeIOPS: {
+		SchemaKeyVolumeIOPS: {
 			Type:     schema.TypeInt,
 			Optional: true,
 		},
-		VPCName: {
+		SchemaKeyVPCName: {
 			Type:     schema.TypeString,
 			Optional: true,
 		},
@@ -72,16 +75,16 @@ func DefaultSchema() map[string]*schema.Schema {
 
 func DefaultMySQLSchema() map[string]*schema.Schema {
 	return utils.MergeSchemas(DefaultSchema(), map[string]*schema.Schema{
-		ClusterSize: {
+		SchemaKeyClusterSize: {
 			Type:     schema.TypeInt,
 			Optional: true,
 			Default:  3,
 		},
-		ConfigFilePath: {
+		SchemaKeyConfigFilePath: {
 			Type:     schema.TypeString,
 			Optional: true,
 		},
-		Version: {
+		SchemaKeyVersion: {
 			Type:     schema.TypeString,
 			Optional: true,
 			ValidateDiagFunc: func(v interface{}, path cty.Path) diag.Diagnostics {
@@ -95,22 +98,22 @@ func DefaultMySQLSchema() map[string]*schema.Schema {
 				return nil
 			},
 		},
-		Port: {
+		SchemaKeyPort: {
 			Type:     schema.TypeInt,
 			Optional: true,
 			Default:  3306,
 		},
-		RootPassword: {
+		SchemaKeyRootPassword: {
 			Type:      schema.TypeString,
 			Optional:  true,
 			Default:   "password",
 			Sensitive: true,
 		},
-		PMMAddress: {
+		SchemaKeyPMMAddress: {
 			Type:     schema.TypeString,
 			Optional: true,
 		},
-		PMMPassword: {
+		SchemaKeyPMMPassword: {
 			Type:      schema.TypeString,
 			Optional:  true,
 			Default:   "password",
@@ -120,13 +123,11 @@ func DefaultMySQLSchema() map[string]*schema.Schema {
 }
 
 const (
-	LogArgMasterIP   = "percona_master_ip"
-	LogArgReplicaIP  = "percona_replica_ip"
 	LogArgVersion    = "percona_version"
 	LogArgInstanceIP = "percona_instance_ip"
 )
 
 const (
-	InstancesSchemaKeyPublicIP  = "public_ip_address"
-	InstancesSchemaKeyPrivateIP = "private_ip_address"
+	SchemaKeyInstancesPublicIP  = "public_ip_address"
+	SchemaKeyInstancesPrivateIP = "private_ip_address"
 )

@@ -1,9 +1,15 @@
 package ps
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"os"
+	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -19,15 +25,17 @@ import (
 )
 
 type manager struct {
-	size           int
-	pass           string
-	replicaPass    string
-	installMyRocks bool
-	cfgPath        string
-	version        string
-	port           int
-	pmmAddress     string
-	pmmPassword    string
+	size                 int
+	pass                 string
+	replicaPass          string
+	installMyRocks       bool
+	cfgPath              string
+	version              string
+	port                 int
+	pmmAddress           string
+	pmmPassword          string
+	orchestratorSize     int
+	orchestratorPassword string
 
 	resourceID string
 
@@ -36,17 +44,19 @@ type manager struct {
 
 func newManager(cloud cloud.Cloud, resourceID string, data *schema.ResourceData) *manager {
 	return &manager{
-		size:           data.Get(resource.ClusterSize).(int),
-		pass:           data.Get(resource.RootPassword).(string),
-		replicaPass:    data.Get(ReplicaPassword).(string),
-		installMyRocks: data.Get(MyRocksInstall).(bool),
-		cfgPath:        data.Get(resource.ConfigFilePath).(string),
-		version:        data.Get(resource.Version).(string),
-		port:           data.Get(resource.Port).(int),
-		pmmAddress:     data.Get(resource.PMMAddress).(string),
-		pmmPassword:    data.Get(resource.PMMPassword).(string),
-		resourceID:     resourceID,
-		cloud:          cloud,
+		size:                 data.Get(resource.SchemaKeyClusterSize).(int),
+		pass:                 data.Get(resource.SchemaKeyRootPassword).(string),
+		replicaPass:          data.Get(schemaKeyReplicaPassword).(string),
+		installMyRocks:       data.Get(schemaKeyMyRocksInstall).(bool),
+		orchestratorSize:     data.Get(schemaKeyOrchestatorSize).(int),
+		orchestratorPassword: data.Get(schemaKeyOrchestatorPassword).(string),
+		cfgPath:              data.Get(resource.SchemaKeyConfigFilePath).(string),
+		version:              data.Get(resource.SchemaKeyVersion).(string),
+		port:                 data.Get(resource.SchemaKeyPort).(int),
+		pmmAddress:           data.Get(resource.SchemaKeyPMMAddress).(string),
+		pmmPassword:          data.Get(resource.SchemaKeyPMMPassword).(string),
+		resourceID:           resourceID,
+		cloud:                cloud,
 	}
 }
 
@@ -55,18 +65,139 @@ const (
 	customMysqlConfigPath  = "/etc/mysql/mysql.conf.d/custom.cnf"
 )
 
-func (m *manager) createCluster(ctx context.Context) ([]cloud.Instance, error) {
-	tflog.Info(ctx, "Creating instances")
-	instances, err := m.cloud.CreateInstances(ctx, m.resourceID, int64(m.size))
+func (m *manager) createCluster(ctx context.Context) error {
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return m.setupPerconaServer(gCtx)
+	})
+	g.Go(func() error {
+		return m.setupOrchestrator(gCtx)
+	})
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	if err := m.addPSInstancesToOrchestrator(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *manager) addPSInstancesToOrchestrator(ctx context.Context) error {
+	if m.orchestratorSize <= 0 {
+		return nil
+	}
+
+	instances, err := m.cloud.ListInstances(ctx, m.resourceID, map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeMySQL,
+	})
 	if err != nil {
-		return nil, errors.Wrap(err, "create instances")
+		return errors.Wrap(err, "failed to list percona server instances")
+	}
+	orcInstances, err := m.cloud.ListInstances(ctx, m.resourceID, map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeOrchestrator,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to list orchestrator instances")
+	}
+
+	orchestratorAPIHosts := make([]string, 0, len(orcInstances))
+	for _, i := range orcInstances {
+		if _, err = m.runCommand(ctx, i, "sudo systemctl restart orchestrator"); err != nil {
+			return errors.Wrap(err, "failed to restart orchestrator")
+		}
+		orchestratorAPIHosts = append(orchestratorAPIHosts, fmt.Sprintf("http://%s:%d/%s", i.PrivateIpAddress, defaultOrchestratorListenPort, defaultOrchestratorURLPrefix))
+	}
+
+	time.Sleep(30 * time.Second)
+	for _, i := range instances {
+		tflog.Info(ctx, fmt.Sprintf("Adding instance %s to orhestrator", i.PublicIpAddress), map[string]any{})
+		_, err := m.runCommand(ctx, i, fmt.Sprintf(`ORCHESTRATOR_API="%s" orchestrator-client -c discover -i %s:%d`, strings.Join(orchestratorAPIHosts, " "), i.PrivateIpAddress, m.port))
+		if err != nil {
+			tflog.Info(ctx, fmt.Sprintf("failed to add instance %s to orchestrator", i.PublicIpAddress), map[string]any{
+				"error": err,
+			})
+		}
+	}
+	return nil
+}
+
+func (m *manager) setupOrchestrator(ctx context.Context) error {
+	if m.orchestratorSize <= 0 {
+		return nil
+	}
+	time.Sleep(time.Second * 5)
+
+	tflog.Info(ctx, "Creating orchestrator instances")
+	instances, err := m.cloud.CreateInstances(ctx, m.resourceID, int64(m.orchestratorSize), map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeOrchestrator,
+	})
+	if err != nil {
+		return errors.Wrap(err, "create orchestrator instances")
+	}
+	tflog.Info(ctx, "Orchestrator instances created")
+	g, gCtx := errgroup.WithContext(ctx)
+	for _, instance := range instances {
+		instance := instance
+		g.Go(func() error {
+			_, err := m.runCommand(gCtx, instance, cmd.Init())
+			if err != nil {
+				return errors.Wrap(err, "run command")
+			}
+			_, err = m.runCommand(gCtx, instance, cmd.InstallOrchestrator())
+			if err != nil {
+				return errors.Wrap(err, "run command")
+			}
+			tflog.Info(ctx, "Orchestrator installed")
+			cfg, err := orchestratorConfig(instance, instances)
+			if err != nil {
+				return errors.Wrap(err, "failed to create orchestrator config")
+			}
+			tflog.Info(ctx, "Orchestrator config created")
+			err = m.sendFile(gCtx, instance, bytes.NewReader(cfg), defaultOrchestratorConfigPath)
+			if err != nil {
+				return errors.Wrap(err, "failed to send orchestrator config file")
+			}
+			creds, err := orchestratorTopologyCredentials(m.orchestratorPassword)
+			if err != nil {
+				return errors.Wrap(err, "failed to create orchestrator credentials file")
+			}
+			err = m.sendFile(gCtx, instance, creds, defaultOrchestratorCredentialsPath)
+			if err != nil {
+				return errors.Wrap(err, "failed to send orchestrator credentials file")
+			}
+			tflog.Info(ctx, "Orchestrator started")
+			_, err = m.runCommand(gCtx, instance, "sudo systemctl start orchestrator")
+			if err != nil {
+				return errors.Wrap(err, "start orchestrator")
+			}
+			return nil
+		})
+	}
+	tflog.Info(ctx, "Waiting orchestrator to be configured")
+	if err := g.Wait(); err != nil {
+		return errors.Wrap(err, "failed to setup orchestrator")
+	}
+	return nil
+}
+
+func (m *manager) setupPerconaServer(ctx context.Context) error {
+	tflog.Info(ctx, "Creating instances")
+	instances, err := m.cloud.CreateInstances(ctx, m.resourceID, int64(m.size), map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeMySQL,
+	})
+	if err != nil {
+		return errors.Wrap(err, "create instances")
 	}
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(len(instances))
 	for _, instance := range instances {
 		instance := instance
 		g.Go(func() error {
-			_, err := m.runCommand(gCtx, instance, cmd.Configure(m.pass))
+			_, err := m.runCommand(gCtx, instance, cmd.Init())
+			if err != nil {
+				return errors.Wrap(err, "init")
+			}
+			_, err = m.runCommand(gCtx, instance, cmd.Configure(m.pass))
 			if err != nil {
 				return errors.Wrap(err, "run command")
 			}
@@ -86,7 +217,12 @@ func (m *manager) createCluster(ctx context.Context) ([]cloud.Instance, error) {
 				return errors.Wrap(err, "failed to install percona server UDF")
 			}
 			if m.cfgPath != "" {
-				if err = m.cloud.SendFile(gCtx, m.resourceID, instance, m.cfgPath, customMysqlConfigPath); err != nil {
+				cfgFile, err := os.Open(m.cfgPath)
+				if err != nil {
+					return errors.Wrap(err, "failed to open config file")
+				}
+				defer cfgFile.Close()
+				if err = m.sendFile(gCtx, instance, cfgFile, customMysqlConfigPath); err != nil {
 					return errors.Wrap(err, "failed to send config file")
 				}
 			}
@@ -136,22 +272,32 @@ func (m *manager) createCluster(ctx context.Context) ([]cloud.Instance, error) {
 					return errors.Wrap(err, "failed to edit default cfg for pmm")
 				}
 			}
+			if m.orchestratorSize > 0 {
+				err = db.CreateOrchestratorUser(ctx, m.orchestratorPassword, false)
+				if err != nil {
+					return errors.Wrap(err, "failed to create orchestrator user")
+				}
+				_, err = m.runCommand(ctx, instance, cmd.InstallOrchestratorClient())
+				if err != nil {
+					return errors.Wrap(err, "failed to install orchestrator-client")
+				}
+			}
 			return nil
 		})
 	}
 	tflog.Info(ctx, "Configuring instances")
 	if err = g.Wait(); err != nil {
-		return nil, errors.Wrap(err, "configure instances")
+		return errors.Wrap(err, "configure instances")
 	}
 	tflog.Info(ctx, "Starting instances")
 	if err := m.setupInstances(ctx, instances); err != nil {
-		return nil, errors.Wrap(err, "setup instances")
+		return errors.Wrap(err, "setup instances")
 	}
-	return instances, nil
+	return nil
 }
 
 func (m *manager) editDefaultCfg(ctx context.Context, instance cloud.Instance, section string, keysAndValues map[string]string) error {
-	return m.cloud.EditFile(ctx, m.resourceID, instance, defaultMysqlConfigPath, utils.SetIniFields(section, keysAndValues))
+	return m.editFile(ctx, instance, defaultMysqlConfigPath, utils.SetIniFields(section, keysAndValues))
 }
 
 func (m *manager) installPerconaServer(ctx context.Context, instance cloud.Instance) error {
@@ -196,9 +342,11 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 		serverID := i + 1
 		if len(instances) > 1 {
 			cfgValues := map[string]string{
-				"log_bin":   "/var/log/mysql/mysql-bin.log",
-				"server_id": strconv.Itoa(serverID),
-				"relay-log": "/var/log/mysql/mysql-relay-bin.log",
+				"log_bin":                  "/var/log/mysql/mysql-bin.log",
+				"server_id":                strconv.Itoa(serverID),
+				"relay-log":                "/var/log/mysql/mysql-relay-bin.log",
+				"gtid-mode":                "ON",
+				"enforce-gtid-consistency": "ON",
 			}
 			if serverID == 1 {
 				cfgValues["bind-address"] = instance.PrivateIpAddress
@@ -221,11 +369,7 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 				return errors.Wrap(err, "failed to reopen connection")
 			}
 		default:
-			binlogName, binlogPos, err := db.BinlogFileAndPosition(ctx)
-			if err != nil {
-				return errors.Wrap(err, "get binlog name and position")
-			}
-			if err := m.startReplica(ctx, instance, masterInstance.PrivateIpAddress, binlogName, binlogPos); err != nil {
+			if err := m.startReplica(ctx, instance, masterInstance.PrivateIpAddress); err != nil {
 				return errors.Wrap(err, "start replica")
 			}
 		}
@@ -239,13 +383,13 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 	return nil
 }
 
-func (m *manager) startReplica(ctx context.Context, instance cloud.Instance, masterIP, binlogName string, binlogPos int64) error {
+func (m *manager) startReplica(ctx context.Context, instance cloud.Instance, masterIP string) error {
 	db, err := m.newClient(instance, internaldb.UserRoot, m.pass)
 	if err != nil {
 		return errors.Wrap(err, "failed to establish sql connection")
 	}
 	defer db.Close()
-	if err := db.ChangeReplicationSource(ctx, masterIP, m.port, internaldb.UserReplica, m.replicaPass, binlogName, binlogPos); err != nil {
+	if err := db.ChangeReplicationSource(ctx, masterIP, m.port, internaldb.UserReplica, m.replicaPass); err != nil {
 		return errors.Wrap(err, "change replication source")
 	}
 	if err := db.StartReplica(ctx); err != nil {
@@ -272,4 +416,58 @@ func (m *manager) runCommand(ctx context.Context, instance cloud.Instance, cmd s
 
 func (m *manager) newClient(instance cloud.Instance, user, pass string) (*mysql.DB, error) {
 	return mysql.NewClient(instance.PublicIpAddress+":"+strconv.Itoa(m.port), user, pass)
+}
+
+func (m *manager) sendFile(ctx context.Context, instance cloud.Instance, file io.Reader, remotePath string) error {
+	fileName := path.Base(remotePath)
+
+	tmpPath := path.Join("/opt/percona", fileName)
+
+	err := m.cloud.SendFile(ctx, m.resourceID, instance, file, path.Join("/opt/percona", fileName))
+	if err != nil {
+		return errors.Wrapf(err, "send file %s", fileName)
+	}
+
+	_, err = m.runCommand(ctx, instance, fmt.Sprintf("sudo mv %s %s", tmpPath, remotePath))
+	if err != nil {
+		return errors.Wrapf(err, "failed to move file from %s to %s", tmpPath, remotePath)
+	}
+
+	_, err = m.runCommand(ctx, instance, fmt.Sprintf("sudo chown root:root %s", remotePath))
+	if err != nil {
+		return errors.Wrapf(err, "failed to change permissions for %s", remotePath)
+	}
+
+	return nil
+}
+
+func (m *manager) editFile(ctx context.Context, instance cloud.Instance, remotePath string, editFunc func(io.ReadWriteSeeker) error) error {
+	fileName := path.Base(remotePath)
+
+	tmpPath := path.Join("/opt/percona", fileName)
+
+	_, err := m.runCommand(ctx, instance, fmt.Sprintf("sudo cp %s %s", remotePath, tmpPath))
+	if err != nil {
+		return errors.Wrapf(err, "failed to copy file from %s to %s", remotePath, tmpPath)
+	}
+
+	_, err = m.runCommand(ctx, instance, fmt.Sprintf("sudo chown ubuntu %s", tmpPath))
+	if err != nil {
+		return errors.Wrapf(err, "failed to change permissions for %s", tmpPath)
+	}
+
+	if err = m.cloud.EditFile(ctx, m.resourceID, instance, tmpPath, editFunc); err != nil {
+		return errors.Wrap(err, "failed to edit file")
+	}
+
+	_, err = m.runCommand(ctx, instance, fmt.Sprintf("sudo chown root:root %s", tmpPath))
+	if err != nil {
+		return errors.Wrapf(err, "failed to change permissions for %s", tmpPath)
+	}
+
+	_, err = m.runCommand(ctx, instance, fmt.Sprintf("sudo mv %s %s", tmpPath, remotePath))
+	if err != nil {
+		return errors.Wrapf(err, "failed to move file from %s to %s", tmpPath, remotePath)
+	}
+	return nil
 }

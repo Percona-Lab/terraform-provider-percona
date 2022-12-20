@@ -2,7 +2,9 @@ package ps
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -15,8 +17,11 @@ import (
 )
 
 const (
-	ReplicaPassword = "replica_password"
-	MyRocksInstall  = "myrocks_install"
+	schemaKeyReplicaPassword      = "replica_password"
+	schemaKeyMyRocksInstall       = "myrocks_install"
+	schemaKeyOrchestatorSize      = "orchestrator_size"
+	schemaKeyOrchestatorPassword  = "orchestrator_password"
+	schemaKeyOrchestatorInstances = "orchestrator_instances"
 )
 
 type PerconaServer struct {
@@ -28,27 +33,45 @@ func (r *PerconaServer) Name() string {
 
 func (r *PerconaServer) Schema() map[string]*schema.Schema {
 	return utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
-		ReplicaPassword: {
+		schemaKeyReplicaPassword: {
 			Type:      schema.TypeString,
 			Optional:  true,
 			Default:   "replicaPassword",
 			Sensitive: true,
 		},
-		MyRocksInstall: {
+		schemaKeyMyRocksInstall: {
 			Type:     schema.TypeBool,
 			Optional: true,
 			Default:  false,
 		},
-		resource.Instances: {
+		schemaKeyOrchestatorSize: {
+			Type:     schema.TypeInt,
+			Optional: true,
+			Default:  0,
+			ValidateDiagFunc: func(v interface{}, path cty.Path) diag.Diagnostics {
+				size := v.(int)
+				if size < 3 && size > 0 {
+					return diag.Errorf("orchestrator size should be 3 or more")
+				}
+				return nil
+			},
+		},
+		schemaKeyOrchestatorPassword: {
+			Type:      schema.TypeString,
+			Optional:  true,
+			Default:   "password",
+			Sensitive: true,
+		},
+		resource.SchemaKeyInstances: {
 			Type:     schema.TypeSet,
 			Computed: true,
 			Elem: &schema.Resource{
 				Schema: map[string]*schema.Schema{
-					resource.InstancesSchemaKeyPublicIP: {
+					resource.SchemaKeyInstancesPublicIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
-					resource.InstancesSchemaKeyPrivateIP: {
+					resource.SchemaKeyInstancesPrivateIP: {
 						Type:     schema.TypeString,
 						Computed: true,
 					},
@@ -59,11 +82,31 @@ func (r *PerconaServer) Schema() map[string]*schema.Schema {
 				},
 			},
 		},
+		schemaKeyOrchestatorInstances: {
+			Type:     schema.TypeSet,
+			Computed: true,
+			Elem: &schema.Resource{
+				Schema: map[string]*schema.Schema{
+					resource.SchemaKeyInstancesPublicIP: {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+					resource.SchemaKeyInstancesPrivateIP: {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+					"url": {
+						Type:     schema.TypeString,
+						Computed: true,
+					},
+				},
+			},
+		},
 	})
 }
 
 func (r *PerconaServer) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
-	resourceID := utils.GetRandomString(resource.IDLength)
+	resourceID := utils.GenerateResourceID()
 	err := c.Configure(ctx, resourceID, data)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
@@ -76,42 +119,62 @@ func (r *PerconaServer) Create(ctx context.Context, data *schema.ResourceData, c
 	}
 
 	manager := newManager(c, resourceID, data)
-	instances, err := manager.createCluster(ctx)
+	err = manager.createCluster(ctx)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't create ps cluster"))
 	}
 
-	set := data.Get(resource.Instances).(*schema.Set)
+	if err := setOutputValues(ctx, c, resourceID, data); err != nil {
+		return diag.FromErr(errors.Wrap(err, "failed to set output values"))
+	}
+
+	tflog.Info(ctx, "Percona Server resource created")
+	return nil
+}
+
+func setOutputValues(ctx context.Context, c cloud.Cloud, resourceID string, data *schema.ResourceData) error {
+	instances, err := c.ListInstances(ctx, resourceID, map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeMySQL,
+	})
+	if err != nil {
+		diag.FromErr(errors.Wrap(err, "failed to list instances"))
+	}
+
+	set := data.Get(resource.SchemaKeyInstances).(*schema.Set)
 	for i, instance := range instances {
 		set.Add(map[string]interface{}{
 			"is_replica":                         i != 0,
-			resource.InstancesSchemaKeyPublicIP:  instance.PublicIpAddress,
-			resource.InstancesSchemaKeyPrivateIP: instance.PrivateIpAddress,
+			resource.SchemaKeyInstancesPublicIP:  instance.PublicIpAddress,
+			resource.SchemaKeyInstancesPrivateIP: instance.PrivateIpAddress,
 		})
 	}
-	err = data.Set(resource.Instances, set)
+	err = data.Set(resource.SchemaKeyInstances, set)
 	if err != nil {
-		return diag.FromErr(errors.Wrap(err, "can't set instances"))
+		return errors.Wrap(err, "can't set mysql instances")
 	}
 
-	args := make(map[string]interface{})
-	if manager.size > 1 {
-		for i, instance := range instances {
-			if i == 0 {
-				args[resource.LogArgMasterIP] = instance.PublicIpAddress
-				continue
-			}
-			if args[resource.LogArgReplicaIP] == nil {
-				args[resource.LogArgReplicaIP] = []interface{}{}
-			}
-			args[resource.LogArgReplicaIP] = append(args[resource.LogArgReplicaIP].([]interface{}), instance.PublicIpAddress)
-		}
-	} else if manager.size == 1 {
-		args[resource.LogArgMasterIP] = instances[0].PublicIpAddress
+	instances, err = c.ListInstances(ctx, resourceID, map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeOrchestrator,
+	})
+	if err != nil {
+		diag.FromErr(errors.Wrap(err, "failed to list instances"))
 	}
-	tflog.Info(ctx, "Percona Server resource created", args)
+
+	set = data.Get(schemaKeyOrchestatorInstances).(*schema.Set)
+	for _, instance := range instances {
+		set.Add(map[string]interface{}{
+			"url":                                fmt.Sprintf("http://%s:%d/%s", instance.PublicIpAddress, defaultOrchestratorListenPort, defaultOrchestratorURLPrefix),
+			resource.SchemaKeyInstancesPublicIP:  instance.PublicIpAddress,
+			resource.SchemaKeyInstancesPrivateIP: instance.PrivateIpAddress,
+		})
+	}
+	err = data.Set(schemaKeyOrchestatorInstances, set)
+	if err != nil {
+		return errors.Wrap(err, "can't set orchestrator instances")
+	}
 	return nil
 }
+
 func (r *PerconaServer) Read(_ context.Context, _ *schema.ResourceData, _ cloud.Cloud) diag.Diagnostics {
 	// TODO
 	return nil

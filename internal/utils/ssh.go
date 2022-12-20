@@ -87,7 +87,7 @@ func sshDialWithContext(ctx context.Context, network, addr string, config *ssh.C
 	return ssh.NewClient(c, chans, reqs), nil
 }
 
-func SendFile(ctx context.Context, srcPath, dstPath, host string, cfg *ssh.ClientConfig) error {
+func SendFile(ctx context.Context, src io.Reader, dstPath, host string, cfg *ssh.ClientConfig) error {
 	conn, err := sshDialWithContext(ctx, "tcp", host+":22", cfg)
 	if err != nil {
 		return errors.Wrap(err, "ssh dial")
@@ -100,19 +100,13 @@ func SendFile(ctx context.Context, srcPath, dstPath, host string, cfg *ssh.Clien
 	}
 	defer sftpClient.Close()
 
-	srcFile, err := os.Open(srcPath)
-	if err != nil {
-		return errors.Wrap(err, "failed to open source file")
-	}
-	defer srcFile.Close()
-
 	dstFile, err := sftpClient.Create(dstPath)
 	if err != nil {
 		return errors.Wrap(err, "failed to create destination file")
 	}
 	defer dstFile.Close()
 
-	if _, err = dstFile.ReadFrom(srcFile); err != nil {
+	if _, err = dstFile.ReadFrom(src); err != nil {
 		return errors.Wrap(err, "failed to copy file")
 	}
 	return nil

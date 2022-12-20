@@ -17,12 +17,16 @@ func init() {
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-func GetRandomString(n int) string {
+func getRandomString(n int) string {
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+func GenerateResourceID() string {
+	return getRandomString(20)
 }
 
 func MergeSchemas(schemas ...map[string]*schema.Schema) map[string]*schema.Schema {
@@ -102,4 +106,19 @@ func ParsePMMAddress(link string) (string, error) {
 		addr.User = url.UserPassword("admin", "admin")
 	}
 	return addr.String(), nil
+}
+
+func MapMerge(maps ...map[string]string) map[string]string {
+	nm := make(map[string]string)
+	if len(maps) == 0 {
+		return nm
+	}
+
+	for _, m := range maps {
+		for k, v := range m {
+			nm[k] = v
+		}
+	}
+
+	return nm
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -77,7 +78,7 @@ func (c *Cloud) RunCommand(ctx context.Context, resourceID string, instance clou
 	return utils.RunCommand(ctx, cmd, instance.PublicIpAddress, sshConfig)
 }
 
-func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.Instance, filePath, remotePath string) error {
+func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.Instance, file io.Reader, remotePath string) error {
 	sshKeyPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "get key pair path")
@@ -86,7 +87,7 @@ func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.
 	if err != nil {
 		return errors.Wrap(err, "get ssh config")
 	}
-	return utils.SendFile(ctx, filePath, remotePath, instance.PublicIpAddress, sshConfig)
+	return utils.SendFile(ctx, file, remotePath, instance.PublicIpAddress, sshConfig)
 }
 
 func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.Instance, path string, editFunc func(io.ReadWriteSeeker) error) error {
@@ -101,7 +102,11 @@ func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.
 	return utils.EditFile(ctx, instance.PublicIpAddress, path, sshConfig, editFunc)
 }
 
-func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64) ([]cloud.Instance, error) {
+func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64, labels map[string]string) ([]cloud.Instance, error) {
+	labels = utils.MapMerge(labels, map[string]string{
+		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+	})
+
 	instanceIds := make([]*string, 0, size)
 	cfg := c.config(resourceID)
 	reservation, err := c.client.RunInstances(&ec2.RunInstancesInput{
@@ -132,12 +137,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeInstance),
-				Tags: []*ec2.Tag{
-					{
-						Key:   aws.String(resource.TagName),
-						Value: aws.String(resourceID),
-					},
-				},
+				Tags:         labelsToTags(labels),
 			},
 		},
 	})
@@ -162,17 +162,29 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 				instanceIds, err)
 		}
 	}
-	instances, err := c.listInstances(ctx, instanceIds)
+	instances, err := c.ListInstances(ctx, resourceID, labels)
 	if err != nil {
 		return nil, errors.Wrap(err, "list instances")
 	}
 	return instances, nil
 }
 
-func (c *Cloud) listInstances(ctx context.Context, instanceIds []*string) ([]cloud.Instance, error) {
-	instances := make([]cloud.Instance, 0, len(instanceIds))
+func (c *Cloud) ListInstances(ctx context.Context, resourceID string, labels map[string]string) ([]cloud.Instance, error) {
+	labels = utils.MapMerge(labels, map[string]string{
+		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+	})
+
+	filters := make([]*ec2.Filter, 0, len(labels))
+	for k, v := range labels {
+		filters = append(filters, &ec2.Filter{
+			Name:   aws.String(fmt.Sprintf("tag:%s", k)),
+			Values: []*string{aws.String(v)},
+		})
+	}
+
+	var instances []cloud.Instance
 	in := &ec2.DescribeInstancesInput{
-		InstanceIds: instanceIds,
+		Filters: filters,
 	}
 	for i := 0; in.NextToken != nil || i == 0; i++ {
 		describeInstances, err := c.client.DescribeInstancesWithContext(ctx, in)
@@ -202,4 +214,18 @@ func (c *Cloud) keyPairPath(resourceID string) (string, error) {
 		return "", errors.Wrap(err, "failed to get absolute key pair path")
 	}
 	return filePath, nil
+}
+
+func labelsToTags(labels map[string]string) []*ec2.Tag {
+	if len(labels) == 0 {
+		return nil
+	}
+	tags := make([]*ec2.Tag, 0, len(labels))
+	for k, v := range labels {
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	return tags
 }

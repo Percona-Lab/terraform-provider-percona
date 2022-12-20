@@ -3,6 +3,7 @@ package pxc
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -37,22 +38,24 @@ type manager struct {
 
 func newManager(cloud cloud.Cloud, resourceID string, data *schema.ResourceData) *manager {
 	return &manager{
-		size:        data.Get(resource.ClusterSize).(int),
-		password:    data.Get(resource.RootPassword).(string),
-		cfgPath:     data.Get(resource.ConfigFilePath).(string),
-		version:     data.Get(resource.Version).(string),
-		mysqlPort:   data.Get(resource.Port).(int),
-		galeraPort:  data.Get(galeraPort).(int),
+		size:        data.Get(resource.SchemaKeyClusterSize).(int),
+		password:    data.Get(resource.SchemaKeyRootPassword).(string),
+		cfgPath:     data.Get(resource.SchemaKeyConfigFilePath).(string),
+		version:     data.Get(resource.SchemaKeyVersion).(string),
+		mysqlPort:   data.Get(resource.SchemaKeyPort).(int),
+		galeraPort:  data.Get(schemaKeyGaleraPort).(int),
 		resourceID:  resourceID,
 		cloud:       cloud,
-		pmmAddress:  data.Get(resource.PMMAddress).(string),
-		pmmPassword: data.Get(resource.PMMPassword).(string),
+		pmmAddress:  data.Get(resource.SchemaKeyPMMAddress).(string),
+		pmmPassword: data.Get(resource.SchemaKeyPMMPassword).(string),
 	}
 }
 
 func (m *manager) Create(ctx context.Context) ([]cloud.Instance, error) {
 	tflog.Info(ctx, "Creating instances")
-	instances, err := m.cloud.CreateInstances(ctx, m.resourceID, int64(m.size))
+	instances, err := m.cloud.CreateInstances(ctx, m.resourceID, int64(m.size), map[string]string{
+		resource.LabelKeyInstanceType: resource.LabelValueInstanceTypeMySQL,
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "create instances")
 	}
@@ -73,7 +76,12 @@ func (m *manager) Create(ctx context.Context) ([]cloud.Instance, error) {
 				return errors.Wrap(err, "install pxc")
 			}
 			if m.cfgPath != "" {
-				if err = m.cloud.SendFile(gCtx, m.resourceID, instance, m.cfgPath, customMysqlConfigPath); err != nil {
+				cfgFile, err := os.Open(m.cfgPath)
+				if err != nil {
+					return errors.Wrap(err, "failed to open config file")
+				}
+				defer cfgFile.Close()
+				if err = m.cloud.SendFile(gCtx, m.resourceID, instance, cfgFile, customMysqlConfigPath); err != nil {
 					return errors.Wrap(err, "failed to send config file")
 				}
 			}

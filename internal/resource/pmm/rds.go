@@ -29,7 +29,7 @@ func (r *RDS) Name() string {
 
 func (r *RDS) Schema() map[string]*schema.Schema {
 	return utils.MergeSchemas(map[string]*schema.Schema{
-		resource.PMMAddress: {
+		resource.SchemaKeyPMMAddress: {
 			Type:      schema.TypeString,
 			Required:  true,
 			Sensitive: true,
@@ -59,13 +59,13 @@ func (r *RDS) Schema() map[string]*schema.Schema {
 }
 
 func (r *RDS) Create(ctx context.Context, data *schema.ResourceData, c cloud.Cloud) diag.Diagnostics {
-	resourceID := utils.GetRandomString(resource.IDLength)
+	resourceID := utils.GenerateResourceID()
 	err := c.Configure(ctx, resourceID, nil)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "can't configure cloud"))
 	}
 
-	pmmAddress := data.Get(resource.PMMAddress).(string)
+	pmmAddress := data.Get(resource.SchemaKeyPMMAddress).(string)
 	pmmAddress, err = utils.ParsePMMAddress(pmmAddress)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "failed to parse pmm address"))
@@ -121,7 +121,7 @@ func (r *RDS) Delete(ctx context.Context, data *schema.ResourceData, c cloud.Clo
 	if resourceID == "" {
 		return diag.FromErr(errors.New("empty resource id"))
 	}
-	pmmAddress := data.Get(resource.PMMAddress).(string)
+	pmmAddress := data.Get(resource.SchemaKeyPMMAddress).(string)
 	pmmAddress, err := utils.ParsePMMAddress(pmmAddress)
 	if err != nil {
 		return diag.FromErr(errors.Wrap(err, "failed to parse pmm address"))

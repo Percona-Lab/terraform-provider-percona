@@ -68,6 +68,8 @@ resource "percona_ps" "ps" {
   port                     = 3306                                # optional, default: 3306
   pmm_address              = "http://admin:admin@127.0.0.1"      # optional
   pmm_password             = "password"                          # optional, password for internal `pmm` user in db
+  orchestrator_size        = 3                                   # optional, default: 0
+  orchestrator_password    = "password"                          # optional, default: "password"
 }
 
 resource "percona_pxc" "pxc" {

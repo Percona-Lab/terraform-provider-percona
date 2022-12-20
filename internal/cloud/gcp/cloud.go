@@ -80,18 +80,18 @@ func (c *Cloud) Metadata() cloud.Metadata {
 func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
 	cfg := c.config(resourceID)
 	if data != nil {
-		cfg.keyPair = data.Get(resource.KeyPairName).(string)
-		cfg.pathToKeyPair = data.Get(resource.PathToKeyPairStorage).(string)
-		cfg.machineType = data.Get(resource.InstanceType).(string)
-		cfg.volumeType = data.Get(resource.VolumeType).(string)
+		cfg.keyPair = data.Get(resource.SchemaKeyKeyPairName).(string)
+		cfg.pathToKeyPair = data.Get(resource.SchemaKeyPathToKeyPairStorage).(string)
+		cfg.machineType = data.Get(resource.SchemaKeyInstanceType).(string)
+		cfg.volumeType = data.Get(resource.SchemaKeyVolumeType).(string)
 		if cfg.volumeType == "" {
 			cfg.volumeType = "pd-balanced"
 		}
-		cfg.volumeSize = int64(data.Get(resource.VolumeSize).(int))
-		if volumeIOPS := int64(data.Get(resource.VolumeIOPS).(int)); volumeIOPS != 0 {
+		cfg.volumeSize = int64(data.Get(resource.SchemaKeyVolumeSize).(int))
+		if volumeIOPS := int64(data.Get(resource.SchemaKeyVolumeIOPS).(int)); volumeIOPS != 0 {
 			cfg.volumeIOPS = &volumeIOPS
 		}
-		cfg.vpcName = data.Get(resource.VPCName).(string)
+		cfg.vpcName = data.Get(resource.SchemaKeyVPCName).(string)
 	}
 	cfg.subnetwork = cfg.vpcName + "-sub"
 	if cfg.vpcName == "" || cfg.vpcName == "default" {
@@ -210,7 +210,7 @@ func (c *Cloud) sourceImageURI(ctx context.Context) (string, error) {
 	return images[0].GetSelfLink(), nil
 }
 
-func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64) ([]cloud.Instance, error) {
+func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64, labels map[string]string) ([]cloud.Instance, error) {
 	cfg := c.config(resourceID)
 	publicKey := user + ":" + cfg.publicKey
 	subnetwork := path.Join("projects", c.Project, "regions", c.Region, "subnetworks", cfg.subnetwork)
@@ -218,6 +218,10 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get latest Ubuntu 20.04 image")
 	}
+
+	labels = utils.MapMerge(labels, map[string]string{
+		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+	})
 
 	op, err := c.client.Instances.BulkInsert(ctx, &computepb.BulkInsertInstanceRequest{
 		BulkInsertInstanceResourceResource: &computepb.BulkInsertInstanceResource{
@@ -237,9 +241,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 						DiskEncryptionKey: new(computepb.CustomerEncryptionKey),
 					},
 				},
-				Labels: map[string]string{
-					resource.TagName: strings.ToLower(resourceID),
-				},
+				Labels:      labels,
 				MachineType: utils.Ref(cfg.machineType),
 				Metadata: &computepb.Metadata{
 					Items: []*computepb.Items{
@@ -276,19 +278,12 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 		return nil, errors.Wrap(err, "failed to wait instances")
 	}
 
-	if err := c.waitUntilAllInstancesAreReady(ctx, c.client.Instances, resourceID); err != nil {
+	if err := c.waitUntilAllInstancesAreReady(ctx, resourceID, labels); err != nil {
 		return nil, errors.Wrap(err, "failed to wait instances")
 	}
-	var instances []cloud.Instance
-	list, err := c.listInstances(ctx, c.client.Instances, resourceID)
+	instances, err := c.ListInstances(ctx, resourceID, labels)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to list instances")
-	}
-	for _, instance := range list {
-		instances = append(instances, cloud.Instance{
-			PrivateIpAddress: *instance.NetworkInterfaces[0].NetworkIP,
-			PublicIpAddress:  *instance.NetworkInterfaces[0].AccessConfigs[0].NatIP,
-		})
 	}
 	return instances, nil
 }
@@ -297,30 +292,30 @@ func instanceNamePattern(resourceID string) string {
 	return strings.ToLower(fmt.Sprintf("instance-%s-#", resourceID))
 }
 
-func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, client *compute.InstancesClient, resourceID string) error {
+func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, resourceID string, labels map[string]string) error {
 	sshConfig, err := c.sshConfig(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "ssh config")
 	}
 	for {
 		isReady := true
-		list, err := c.listInstances(ctx, client, resourceID)
+		instances, err := c.ListInstances(ctx, resourceID, labels)
 		if err != nil {
 			return errors.Wrap(err, "failed to list instances")
 		}
-		if len(list) == 0 {
+		if len(instances) == 0 {
 			if err = gax.Sleep(ctx, time.Second); err != nil {
 				return err
 			}
 			continue
 		}
-		for _, v := range list {
-			host := v.NetworkInterfaces[0].AccessConfigs[0].NatIP
-			if host == nil || *host == "" {
+		for _, instance := range instances {
+			host := instance.PublicIpAddress
+			if host == "" {
 				isReady = false
 				break
 			}
-			if err = utils.SSHPing(ctx, *host, sshConfig); err != nil {
+			if err = utils.SSHPing(ctx, host, sshConfig); err != nil {
 				isReady = false
 				break
 			}
@@ -334,10 +329,31 @@ func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, client *compu
 	}
 }
 
-func (c *Cloud) listInstances(ctx context.Context, client *compute.InstancesClient, resourceID string) ([]*computepb.Instance, error) {
+func (c *Cloud) listInstances(ctx context.Context, resourceID string, labels map[string]string) ([]*computepb.Instance, error) {
 	var instances []*computepb.Instance
-	it := client.List(ctx, &computepb.ListInstancesRequest{
-		Filter:  utils.Ref("labels." + resource.TagName + ":" + strings.ToLower(resourceID)),
+
+	labels = utils.MapMerge(labels, map[string]string{
+		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+	})
+
+	var fb strings.Builder
+	i := 0
+	for k, v := range labels {
+		if i > 0 {
+			fb.WriteString(" AND ")
+		}
+		fb.WriteString("labels.")
+		fb.WriteString(k)
+		fb.WriteString(":")
+		fb.WriteString(v)
+		i++
+	}
+	var filter *string
+	if fb.Len() > 0 {
+		filter = utils.Ref(fb.String())
+	}
+	it := c.client.Instances.List(ctx, &computepb.ListInstancesRequest{
+		Filter:  filter,
 		Project: c.Project,
 		Zone:    c.Zone,
 	})
@@ -350,6 +366,22 @@ func (c *Cloud) listInstances(ctx context.Context, client *compute.InstancesClie
 			return nil, errors.Wrap(err, "next page")
 		}
 		instances = append(instances, instance)
+	}
+	return instances, nil
+}
+
+func (c *Cloud) ListInstances(ctx context.Context, resourceID string, labels map[string]string) ([]cloud.Instance, error) {
+	var instances []cloud.Instance
+
+	pbInstances, err := c.listInstances(ctx, resourceID, labels)
+	if err != nil {
+		return nil, err
+	}
+	for _, instance := range pbInstances {
+		instances = append(instances, cloud.Instance{
+			PrivateIpAddress: *instance.NetworkInterfaces[0].NetworkIP,
+			PublicIpAddress:  *instance.NetworkInterfaces[0].AccessConfigs[0].NatIP,
+		})
 	}
 	return instances, nil
 }
@@ -402,7 +434,7 @@ func (c *Cloud) createFirewallIfNotExists(ctx context.Context, firewallName, vpc
 		Network:   utils.Ref(path.Join("projects", c.Project, "global", "networks", vpcName)),
 		Priority:  utils.Ref(int32(65534)),
 		SourceRanges: []string{
-			resource.AllAddressesCidrBlock,
+			cloud.AllAddressesCidrBlock,
 		},
 		Allowed: []*computepb.Allowed{
 			{
@@ -445,7 +477,7 @@ func (c *Cloud) createSubnetworkIfNotExists(ctx context.Context, subnetworkName,
 	}
 	subnetwork = &computepb.Subnetwork{
 		Name:                  utils.Ref(subnetworkName),
-		IpCidrRange:           utils.Ref(resource.DefaultVpcCidrBlock),
+		IpCidrRange:           utils.Ref(cloud.DefaultVpcCidrBlock),
 		Network:               utils.Ref(path.Join("projects", c.Project, "global", "networks", vpcName)),
 		PrivateIpGoogleAccess: utils.Ref(true),
 		Region:                utils.Ref(path.Join("projects", c.Project, "regions", c.Region)),
@@ -482,12 +514,12 @@ func (c *Cloud) RunCommand(ctx context.Context, resourceID string, instance clou
 	return utils.RunCommand(ctx, cmd, instance.PublicIpAddress, sshConfig)
 }
 
-func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.Instance, filePath, remotePath string) error {
+func (c *Cloud) SendFile(ctx context.Context, resourceID string, instance cloud.Instance, file io.Reader, remotePath string) error {
 	sshConfig, err := c.sshConfig(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "ssh config")
 	}
-	return utils.SendFile(ctx, filePath, remotePath, instance.PublicIpAddress, sshConfig)
+	return utils.SendFile(ctx, file, remotePath, instance.PublicIpAddress, sshConfig)
 }
 
 func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.Instance, path string, editFunc func(io.ReadWriteSeeker) error) error {
@@ -505,7 +537,7 @@ func (c *Cloud) Credentials() (cloud.Credentials, error) {
 
 func (c *Cloud) DeleteInfrastructure(ctx context.Context, resourceID string) error {
 	cfg := c.config(resourceID)
-	list, err := c.listInstances(ctx, c.client.Instances, resourceID)
+	list, err := c.listInstances(ctx, resourceID, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to list instances")
 	}

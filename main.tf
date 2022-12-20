@@ -27,8 +27,9 @@ resource "percona_ps" "ps" {
 
 output "ps_resources" {
   value = [for resource in percona_ps.ps : {
-    resource_id = resource.id,
-    instances   = resource.instances,
+    resource_id            = resource.id,
+    instances              = resource.instances,
+    orchestrator_instances = resource.orchestrator_instances,
   }]
 }
 

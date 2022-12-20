@@ -19,32 +19,32 @@ func (c *Client) DeleteServicesByResourceID(resourceID string) error {
 	}
 	var serviceIDs []string
 	for _, service := range resp.Mysql {
-		if v, ok := service.CustomLabels[resource.TagName]; ok && v == resourceID {
+		if v, ok := service.CustomLabels[resource.LabelKeyResourceID]; ok && v == resourceID {
 			serviceIDs = append(serviceIDs, service.ServiceID)
 		}
 	}
 	for _, service := range resp.Mongodb {
-		if v, ok := service.CustomLabels[resource.TagName]; ok && v == resourceID {
+		if v, ok := service.CustomLabels[resource.LabelKeyResourceID]; ok && v == resourceID {
 			serviceIDs = append(serviceIDs, service.ServiceID)
 		}
 	}
 	for _, service := range resp.Postgresql {
-		if v, ok := service.CustomLabels[resource.TagName]; ok && v == resourceID {
+		if v, ok := service.CustomLabels[resource.LabelKeyResourceID]; ok && v == resourceID {
 			serviceIDs = append(serviceIDs, service.ServiceID)
 		}
 	}
 	for _, service := range resp.Proxysql {
-		if v, ok := service.CustomLabels[resource.TagName]; ok && v == resourceID {
+		if v, ok := service.CustomLabels[resource.LabelKeyResourceID]; ok && v == resourceID {
 			serviceIDs = append(serviceIDs, service.ServiceID)
 		}
 	}
 	for _, service := range resp.Haproxy {
-		if v, ok := service.CustomLabels[resource.TagName]; ok && v == resourceID {
+		if v, ok := service.CustomLabels[resource.LabelKeyResourceID]; ok && v == resourceID {
 			serviceIDs = append(serviceIDs, service.ServiceID)
 		}
 	}
 	for _, service := range resp.External {
-		if v, ok := service.CustomLabels[resource.TagName]; ok && v == resourceID {
+		if v, ok := service.CustomLabels[resource.LabelKeyResourceID]; ok && v == resourceID {
 			serviceIDs = append(serviceIDs, service.ServiceID)
 		}
 	}
@@ -97,7 +97,7 @@ func (c *Client) AddRDSInstanceToPMM(ctx context.Context, resourceID string, ins
 		AwsAccessKey: creds.AccessKey,
 		AwsSecretKey: creds.SecretKey,
 		CustomLabels: map[string]string{
-			resource.TagName: resourceID,
+			resource.LabelKeyResourceID: resourceID,
 		},
 		RdsExporter:               true,
 		QanMysqlPerfschema:        true,

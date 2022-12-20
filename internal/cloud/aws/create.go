@@ -53,15 +53,15 @@ func (c *Cloud) sourceImage(ctx context.Context) (*string, error) {
 func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.ResourceData) error {
 	cfg := c.config(resourceID)
 	if data != nil {
-		cfg.keyPair = aws.String(data.Get(resource.KeyPairName).(string))
-		cfg.pathToKeyPair = aws.String(data.Get(resource.PathToKeyPairStorage).(string))
-		cfg.instanceType = aws.String(data.Get(resource.InstanceType).(string))
-		cfg.volumeType = aws.String(data.Get(resource.VolumeType).(string))
+		cfg.keyPair = aws.String(data.Get(resource.SchemaKeyKeyPairName).(string))
+		cfg.pathToKeyPair = aws.String(data.Get(resource.SchemaKeyPathToKeyPairStorage).(string))
+		cfg.instanceType = aws.String(data.Get(resource.SchemaKeyInstanceType).(string))
+		cfg.volumeType = aws.String(data.Get(resource.SchemaKeyVolumeType).(string))
 		if aws.StringValue(cfg.volumeType) == "" {
 			cfg.volumeType = aws.String("gp2")
 		}
-		cfg.volumeSize = aws.Int64(int64(data.Get(resource.VolumeSize).(int)))
-		if v, ok := data.Get(resource.VolumeIOPS).(int); ok {
+		cfg.volumeSize = aws.Int64(int64(data.Get(resource.SchemaKeyVolumeSize).(int)))
+		if v, ok := data.Get(resource.SchemaKeyVolumeIOPS).(int); ok {
 			if v != 0 {
 				cfg.volumeIOPS = aws.Int64(int64(v))
 			}
@@ -71,7 +71,7 @@ func (c *Cloud) Configure(ctx context.Context, resourceID string, data *schema.R
 				cfg.volumeThroughput = aws.Int64(int64(v))
 			}
 		}
-		cfg.vpcName = aws.String(data.Get(resource.VPCName).(string))
+		cfg.vpcName = aws.String(data.Get(resource.SchemaKeyVPCName).(string))
 		cfg.vpcId = aws.String(data.Get(vpcID).(string))
 	}
 	var err error
@@ -191,7 +191,7 @@ func (c *Cloud) createKeyPair(ctx context.Context, resourceID string) error {
 				ResourceType: aws.String(ec2.ResourceTypeKeyPair),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(resource.TagName),
+						Key:   aws.String(resource.LabelKeyResourceID),
 						Value: aws.String(resourceID),
 					},
 				},
@@ -238,13 +238,13 @@ func (c *Cloud) createOrGetVPC(ctx context.Context, resourceID string) (*ec2.Vpc
 		}
 	}
 	in := &ec2.CreateVpcInput{
-		CidrBlock: aws.String(resource.DefaultVpcCidrBlock),
+		CidrBlock: aws.String(cloud.DefaultVpcCidrBlock),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				ResourceType: aws.String(ec2.ResourceTypeVpc),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(resource.TagName),
+						Key:   aws.String(resource.LabelKeyResourceID),
 						Value: aws.String(resourceID),
 					},
 				},
@@ -305,7 +305,7 @@ func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, re
 				ResourceType: aws.String(ec2.ResourceTypeInternetGateway),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(resource.TagName),
+						Key:   aws.String(resource.LabelKeyResourceID),
 						Value: aws.String(resourceID),
 					},
 				},
@@ -364,7 +364,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 				ResourceType: aws.String(ec2.ResourceTypeSecurityGroup),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(resource.TagName),
+						Key:   aws.String(resource.LabelKeyResourceID),
 						Value: aws.String(resourceID),
 					},
 				},
@@ -382,7 +382,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 			FromPort:   aws.Int64(-1),
 			ToPort:     aws.Int64(-1),
 			IpRanges: []*ec2.IpRange{{
-				CidrIp: aws.String(resource.AllAddressesCidrBlock),
+				CidrIp: aws.String(cloud.AllAddressesCidrBlock),
 			}},
 		}},
 	}); err != nil {
@@ -430,7 +430,7 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceID 
 				ResourceType: aws.String(ec2.ResourceTypeSubnet),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(resource.TagName),
+						Key:   aws.String(resource.LabelKeyResourceID),
 						Value: aws.String(resourceID),
 					},
 				},
@@ -475,7 +475,7 @@ func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway
 				ResourceType: aws.String(ec2.ResourceTypeRouteTable),
 				Tags: []*ec2.Tag{
 					{
-						Key:   aws.String(resource.TagName),
+						Key:   aws.String(resource.LabelKeyResourceID),
 						Value: aws.String(resourceID),
 					},
 				},
@@ -494,7 +494,7 @@ func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway
 	}
 
 	if _, err = c.client.CreateRouteWithContext(ctx, &ec2.CreateRouteInput{
-		DestinationCidrBlock: aws.String(resource.AllAddressesCidrBlock),
+		DestinationCidrBlock: aws.String(cloud.AllAddressesCidrBlock),
 		GatewayId:            gateway.InternetGatewayId,
 		RouteTableId:         out.RouteTable.RouteTableId,
 	}); err != nil {
