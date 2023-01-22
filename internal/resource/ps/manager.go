@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/pkg/errors"
@@ -36,6 +37,7 @@ type manager struct {
 	pmmPassword          string
 	orchestratorSize     int
 	orchestratorPassword string
+	replicationType      string
 
 	resourceID string
 
@@ -46,6 +48,7 @@ func newManager(cloud cloud.Cloud, resourceID string, data *schema.ResourceData)
 	return &manager{
 		size:                 data.Get(resource.SchemaKeyClusterSize).(int),
 		pass:                 data.Get(resource.SchemaKeyRootPassword).(string),
+		replicationType:      data.Get(schemaKeyReplicationType).(string),
 		replicaPass:          data.Get(schemaKeyReplicaPassword).(string),
 		installMyRocks:       data.Get(schemaKeyMyRocksInstall).(bool),
 		orchestratorSize:     data.Get(schemaKeyOrchestatorSize).(int),
@@ -273,11 +276,11 @@ func (m *manager) setupPerconaServer(ctx context.Context) error {
 				}
 			}
 			if m.orchestratorSize > 0 {
-				err = db.CreateOrchestratorUser(ctx, m.orchestratorPassword, false)
+				err = db.CreateOrchestratorUser(gCtx, m.orchestratorPassword, false)
 				if err != nil {
 					return errors.Wrap(err, "failed to create orchestrator user")
 				}
-				_, err = m.runCommand(ctx, instance, cmd.InstallOrchestratorClient())
+				_, err = m.runCommand(gCtx, instance, cmd.InstallOrchestratorClient())
 				if err != nil {
 					return errors.Wrap(err, "failed to install orchestrator-client")
 				}
@@ -328,31 +331,89 @@ func (m *manager) installPerconaServer(ctx context.Context, instance cloud.Insta
 	return nil
 }
 
+const defaultMySQLGroupReplicationPort = 33061
+
+func (m *manager) instanceConfig(ctx context.Context, instance cloud.Instance, instances []cloud.Instance, serverID int, uuid string) map[string]string {
+	switch m.replicationType {
+	case replicationTypeAsync:
+		cfg := map[string]string{
+			"log_bin":                  "/var/log/mysql/mysql-bin.log",
+			"server_id":                strconv.Itoa(serverID),
+			"relay-log":                "/var/log/mysql/mysql-relay-bin.log",
+			"gtid-mode":                "ON",
+			"enforce-gtid-consistency": "ON",
+		}
+		if serverID == 1 {
+			cfg["bind-address"] = instance.PrivateIpAddress
+		}
+		return cfg
+	case replicationTypeGR:
+		cfg := map[string]string{
+			"disabled_storage_engines": "MyISAM,BLACKHOLE,FEDERATED,ARCHIVE,MEMORY",
+			"server_id":                strconv.Itoa(serverID),
+			"log_bin":                  "/var/log/mysql/mysql-bin.log",
+			"relay-log":                "/var/log/mysql/mysql-relay-bin.log",
+			"gtid-mode":                "ON",
+			"enforce-gtid-consistency": "ON",
+
+			"plugin_load_add":                   "group_replication.so",
+			"group_replication_group_name":      uuid,
+			"group_replication_start_on_boot":   "off",
+			"group_replication_local_address":   fmt.Sprintf("%s:%d", instance.PrivateIpAddress, defaultMySQLGroupReplicationPort),
+			"group_replication_bootstrap_group": "off",
+		}
+		seeds := make([]string, 0, len(instances))
+		allowList := make([]string, 0, len(instances))
+		for _, i := range instances {
+			seeds = append(seeds, fmt.Sprintf("%s:%d", i.PrivateIpAddress, defaultMySQLGroupReplicationPort))
+			allowList = append(allowList, i.PrivateIpAddress)
+		}
+		cfg["group_replication_group_seeds"] = strings.Join(seeds, ",")
+		cfg["group_replication_ip_allowlist"] = strings.Join(allowList, ",")
+		return cfg
+	}
+	return nil
+}
+
 func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance) error {
+	switch m.replicationType {
+	case replicationTypeAsync:
+		if err := m.setupAsyncInstances(ctx, instances); err != nil {
+			return errors.Wrap(err, "failed to setup async instances")
+		}
+	case replicationTypeGR:
+		if err := m.setupGRInstances(ctx, instances); err != nil {
+			return errors.Wrap(err, "failed to setup GR instances")
+		}
+	default:
+		return errors.New("unknown replication type")
+	}
+	for _, instance := range instances {
+		if m.pmmAddress != "" {
+			_, err := m.runCommand(ctx, instance, cmd.AddServiceToPMM("pmm", m.pmmPassword, m.port))
+			if err != nil {
+				return errors.Wrap(err, "add service to pmm")
+			}
+		}
+	}
+	return nil
+}
+
+func (m *manager) setupAsyncInstances(ctx context.Context, instances []cloud.Instance) error {
 	masterInstance := instances[0]
 	db, err := m.newClient(masterInstance, internaldb.UserRoot, m.pass)
 	if err != nil {
 		return errors.Wrap(err, "new client")
 	}
 	defer db.Close()
-	if err := db.CreateReplicaUser(ctx, m.replicaPass); err != nil {
+	if err := db.CreateReplicaUser(ctx, m.replicaPass, false); err != nil {
 		return errors.Wrap(err, "create replica user")
 	}
 	for i, instance := range instances {
 		serverID := i + 1
 		if len(instances) > 1 {
-			cfgValues := map[string]string{
-				"log_bin":                  "/var/log/mysql/mysql-bin.log",
-				"server_id":                strconv.Itoa(serverID),
-				"relay-log":                "/var/log/mysql/mysql-relay-bin.log",
-				"gtid-mode":                "ON",
-				"enforce-gtid-consistency": "ON",
-			}
-			if serverID == 1 {
-				cfgValues["bind-address"] = instance.PrivateIpAddress
-			}
-
-			if err := m.editDefaultCfg(ctx, instance, "mysqld", cfgValues); err != nil {
+			cfg := m.instanceConfig(ctx, instance, instances, serverID, "")
+			if err := m.editDefaultCfg(ctx, instance, "mysqld", cfg); err != nil {
 				return errors.Wrap(err, "edit default cfg for replication")
 			}
 		}
@@ -373,11 +434,81 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 				return errors.Wrap(err, "start replica")
 			}
 		}
-		if m.pmmAddress != "" {
-			_, err = m.runCommand(ctx, instance, cmd.AddServiceToPMM("pmm", m.pmmPassword, m.port))
-			if err != nil {
-				return errors.Wrap(err, "add service to pmm")
+	}
+	return nil
+}
+
+func (m *manager) setupGRInstances(ctx context.Context, instances []cloud.Instance) error {
+	g, gCtx := errgroup.WithContext(ctx)
+	groupUUID, err := uuid.GenerateUUID()
+	if err != nil {
+		return errors.New("failed to generate uuid")
+	}
+	for i, instance := range instances {
+		instance := instance
+		serverID := i + 1
+		g.Go(func() error {
+			cfg := m.instanceConfig(gCtx, instance, instances, serverID, groupUUID)
+			if err := m.editDefaultCfg(gCtx, instance, "mysqld", cfg); err != nil {
+				return errors.Wrap(err, "edit default cfg for replication")
 			}
+			_, err = m.runCommand(gCtx, instance, cmd.Restart())
+			if err != nil {
+				return errors.Wrap(err, "restart mysql")
+			}
+			db, err := m.newClient(instance, internaldb.UserRoot, m.pass)
+			if err != nil {
+				return errors.Wrap(err, "new client")
+			}
+			defer db.Close()
+
+			if err := db.CreateReplicaUser(gCtx, m.replicaPass, true); err != nil {
+				return errors.Wrap(err, "failed to create replica user")
+			}
+			if serverID == 1 {
+				if m.replicationType == replicationTypeGR {
+					if err := db.ChangeGroupReplicationSource(gCtx, internaldb.UserReplica, m.replicaPass); err != nil {
+						return errors.Wrap(err, "failed to change group replication source")
+					}
+					if err := db.SetGroupReplicationBootstrapGroup(gCtx, true); err != nil {
+						return errors.Wrap(err, "set group_replication_bootstrap_group=ON")
+					}
+					if err := db.StartGroupReplication(gCtx); err != nil {
+						return errors.Wrap(err, "start group replication")
+					}
+					if err := db.SetGroupReplicationBootstrapGroup(gCtx, false); err != nil {
+						return errors.Wrap(err, "set group_replication_bootstrap_group=OFF")
+					}
+				}
+			}
+
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	for i, instance := range instances {
+		err := func() error {
+			if i == 0 {
+				return nil
+			}
+			db, err := m.newClient(instance, internaldb.UserRoot, m.pass)
+			if err != nil {
+				return errors.Wrap(err, "new client")
+			}
+			defer db.Close()
+			if err := db.ChangeGroupReplicationSource(ctx, internaldb.UserReplica, m.replicaPass); err != nil {
+				return errors.Wrap(err, "failed to change group replication source")
+			}
+			if err := db.StartGroupReplication(ctx); err != nil {
+				return errors.Wrap(err, "start group replication for instance")
+			}
+			return nil
+		}()
+		if err != nil {
+			return errors.Wrapf(err, "failed to start group replication for instance %s", instance.PrivateIpAddress)
 		}
 	}
 	return nil

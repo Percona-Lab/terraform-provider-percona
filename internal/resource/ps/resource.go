@@ -17,11 +17,17 @@ import (
 )
 
 const (
-	schemaKeyReplicaPassword      = "replica_password"
+	schemaKeyReplicationType      = "replication_type"
+	schemaKeyReplicaPassword      = "replication_password"
 	schemaKeyMyRocksInstall       = "myrocks_install"
 	schemaKeyOrchestatorSize      = "orchestrator_size"
 	schemaKeyOrchestatorPassword  = "orchestrator_password"
 	schemaKeyOrchestatorInstances = "orchestrator_instances"
+)
+
+const (
+	replicationTypeAsync = "async"
+	replicationTypeGR    = "group-replication"
 )
 
 type PerconaServer struct {
@@ -33,6 +39,18 @@ func (r *PerconaServer) Name() string {
 
 func (r *PerconaServer) Schema() map[string]*schema.Schema {
 	return utils.MergeSchemas(resource.DefaultMySQLSchema(), aws.Schema(), map[string]*schema.Schema{
+		schemaKeyReplicationType: {
+			Type:     schema.TypeString,
+			Optional: true,
+			Default:  replicationTypeAsync,
+			ValidateDiagFunc: func(v interface{}, path cty.Path) diag.Diagnostics {
+				rt := v.(string)
+				if rt != replicationTypeAsync && rt != replicationTypeGR {
+					return diag.Errorf("supported types for %s are: %s and %s", schemaKeyReplicationType, replicationTypeAsync, replicationTypeGR)
+				}
+				return nil
+			},
+		},
 		schemaKeyReplicaPassword: {
 			Type:      schema.TypeString,
 			Optional:  true,

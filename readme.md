@@ -53,7 +53,8 @@ resource "percona_ps" "ps" {
   instance_type            = "t3.micro"                          # required
   key_pair_name            = "sshKey1"                           # required
   password                 = "password"                          # optional, default: "password"
-  replica_password         = "replicaPassword"                   # optional, default: "replicaPassword"
+  replication_type         = "async"                             # optional, default: "async", supported values: "async", "group-replication"
+  replication_password     = "replicaPassword"                   # optional, default: "replicaPassword"
   cluster_size             = 2                                   # optional, default: 3
   path_to_key_pair_storage = "/tmp/"                             # optional, default: "."
   volume_type              = "gp2"                               # optional, default: "gp2" for AWS, "pd-balanced" for GCP

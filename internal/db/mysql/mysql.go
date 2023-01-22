@@ -80,6 +80,18 @@ func (db *DB) StartReplica(ctx context.Context) error {
 	return nil
 }
 
+func (db *DB) SetGroupReplicationBootstrapGroup(ctx context.Context, on bool) error {
+	v := "OFF"
+	if on {
+		v = "ON"
+	}
+	_, err := db.ExecContext(ctx, "SET GLOBAL group_replication_bootstrap_group=?", v)
+	if err != nil {
+		return errors.Wrap(err, "set group replication bootstrap group")
+	}
+	return nil
+}
+
 func (db *DB) createUser(ctx context.Context, user, host, pass string) error {
 	_, err := db.ExecContext(ctx, `CREATE USER IF NOT EXISTS ?@? IDENTIFIED WITH mysql_native_password BY ?`, user, host, pass)
 	if err != nil {
@@ -88,13 +100,34 @@ func (db *DB) createUser(ctx context.Context, user, host, pass string) error {
 	return nil
 }
 
-func (db *DB) CreateReplicaUser(ctx context.Context, password string) error {
+func (db *DB) CreateReplicaUser(ctx context.Context, password string, isGR bool) error {
+	if isGR {
+		if _, err := db.ExecContext(ctx, "SET SQL_LOG_BIN=0"); err != nil {
+			return errors.Wrap(err, "set sql log bin 0")
+		}
+	}
 	if err := db.createUser(ctx, internaldb.UserReplica, "%", password); err != nil {
 		return errors.Wrap(err, "create user")
 	}
 	if _, err := db.ExecContext(ctx, "GRANT REPLICATION SLAVE ON *.* TO ?@?", internaldb.UserReplica, "%"); err != nil {
 		return errors.Wrap(err, "grant replication slave")
 	}
+
+	if isGR {
+		if _, err := db.ExecContext(ctx, "GRANT CONNECTION_ADMIN ON *.* TO ?@?", internaldb.UserReplica, "%"); err != nil {
+			return errors.Wrap(err, "grant connection admin")
+		}
+		if _, err := db.ExecContext(ctx, "GRANT BACKUP_ADMIN ON *.* TO ?@?", internaldb.UserReplica, "%"); err != nil {
+			return errors.Wrap(err, "grant backup admin")
+		}
+		if _, err := db.ExecContext(ctx, "GRANT GROUP_REPLICATION_STREAM ON *.* TO ?@?", internaldb.UserReplica, "%"); err != nil {
+			return errors.Wrap(err, "grant group replication string")
+		}
+		if _, err := db.ExecContext(ctx, "SET SQL_LOG_BIN=1"); err != nil {
+			return errors.Wrap(err, "set sql log bin 1")
+		}
+	}
+
 	return nil
 }
 
@@ -149,6 +182,20 @@ func (db *DB) CreateOrchestratorUser(ctx context.Context, password string, isGro
 		if _, err := db.ExecContext(ctx, "GRANT SELECT ON performance_schema.replication_group_members TO ?@?", internaldb.UserOrchestrator, "%"); err != nil {
 			return errors.Wrap(err, "grant select")
 		}
+	}
+	return nil
+}
+
+func (db *DB) StartGroupReplication(ctx context.Context) error {
+	if _, err := db.ExecContext(ctx, "START GROUP_REPLICATION"); err != nil {
+		return errors.Wrap(err, "start group replication")
+	}
+	return nil
+}
+
+func (db *DB) ChangeGroupReplicationSource(ctx context.Context, sourceUser, sourcePassword string) error {
+	if _, err := db.ExecContext(ctx, "CHANGE REPLICATION SOURCE TO SOURCE_USER=?, SOURCE_PASSWORD=? FOR CHANNEL 'group_replication_recovery'", sourceUser, sourcePassword); err != nil {
+		return errors.Wrap(err, "change group replication source")
 	}
 	return nil
 }
