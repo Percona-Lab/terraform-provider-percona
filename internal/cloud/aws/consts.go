@@ -7,7 +7,6 @@ import (
 const (
 	defaultSubnetCidrBlock = "10.0.1.0/16"
 
-	defaultSecurityGroupName        = "percona-security-group"
 	defaultSecurityGroupDescription = "Percona Terraform plugin security group"
 )
 

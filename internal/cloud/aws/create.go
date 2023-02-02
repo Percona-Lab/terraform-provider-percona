@@ -282,22 +282,26 @@ func vpcName(vpc *ec2.Vpc) string {
 }
 
 func (c *Cloud) createOrGetInternetGateway(ctx context.Context, vpc *ec2.Vpc, resourceID string) (*ec2.InternetGateway, error) {
-	vpcName := vpcName(vpc)
 	var name string
-	if vpcName != "" {
+	filters := []*ec2.Filter{{
+		Name:   aws.String("attachment.vpc-id"),
+		Values: []*string{vpc.VpcId},
+	}}
+	if vpcName := vpcName(vpc); vpcName != "" {
 		name = vpcName + "-igw"
-		out, err := c.client.DescribeInternetGatewaysWithContext(ctx, &ec2.DescribeInternetGatewaysInput{
-			Filters: []*ec2.Filter{{
-				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(name)},
-			}},
+		filters = append(filters, &ec2.Filter{
+			Name:   aws.String("tag:Name"),
+			Values: []*string{aws.String(name)},
 		})
-		if err != nil {
-			return nil, errors.Wrap(err, "describe internet gateway")
-		}
-		if len(out.InternetGateways) > 0 {
-			return out.InternetGateways[0], nil
-		}
+	}
+	outDesc, err := c.client.DescribeInternetGatewaysWithContext(ctx, &ec2.DescribeInternetGatewaysInput{
+		Filters: filters,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "describe internet gateway")
+	}
+	if len(outDesc.InternetGateways) > 0 {
+		return outDesc.InternetGateways[0], nil
 	}
 	in := &ec2.CreateInternetGatewayInput{
 		TagSpecifications: []*ec2.TagSpecification{
@@ -339,7 +343,7 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 	if vpcName != "" {
 		name = vpcName + "-sg"
 	} else {
-		name = defaultSecurityGroupName
+		name = aws.StringValue(vpc.VpcId) + "-sg"
 	}
 
 	out, err := c.client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
@@ -405,22 +409,26 @@ func (c *Cloud) createOrGetSecurityGroup(ctx context.Context, vpc *ec2.Vpc, reso
 }
 
 func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceID string) (*ec2.Subnet, error) {
-	vpcName := vpcName(vpc)
 	var name string
-	if vpcName != "" {
+	filters := []*ec2.Filter{{
+		Name:   aws.String("vpc-id"),
+		Values: []*string{vpc.VpcId},
+	}}
+	if vpcName := vpcName(vpc); vpcName != "" {
 		name = vpcName + "-subnet"
-		out, err := c.client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
-			Filters: []*ec2.Filter{{
-				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(name)},
-			}},
+		filters = append(filters, &ec2.Filter{
+			Name:   aws.String("tag:Name"),
+			Values: []*string{aws.String(name)},
 		})
-		if err != nil {
-			return nil, errors.Wrap(err, "describe subnet")
-		}
-		if len(out.Subnets) > 0 {
-			return out.Subnets[0], nil
-		}
+	}
+	out, err := c.client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
+		Filters: filters,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "describe subnet")
+	}
+	if len(out.Subnets) > 0 {
+		return out.Subnets[0], nil
 	}
 	in := &ec2.CreateSubnetInput{
 		VpcId:     vpc.VpcId,
@@ -451,22 +459,26 @@ func (c *Cloud) createOrGetSubnet(ctx context.Context, vpc *ec2.Vpc, resourceID 
 }
 
 func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway *ec2.InternetGateway, subnet *ec2.Subnet, resourceID string) (*ec2.RouteTable, error) {
-	vpcName := vpcName(vpc)
 	var name string
-	if vpcName != "" {
+	filters := []*ec2.Filter{{
+		Name:   aws.String("vpc-id"),
+		Values: []*string{vpc.VpcId},
+	}}
+	if vpcName := vpcName(vpc); vpcName != "" {
 		name = vpcName + "-rtb"
-		out, err := c.client.DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
-			Filters: []*ec2.Filter{{
-				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(name)},
-			}},
+		filters = append(filters, &ec2.Filter{
+			Name:   aws.String("tag:Name"),
+			Values: []*string{aws.String(name)},
 		})
-		if err != nil {
-			return nil, errors.Wrap(err, "describe route table")
-		}
-		if len(out.RouteTables) > 0 {
-			return out.RouteTables[0], nil
-		}
+	}
+	outDesc, err := c.client.DescribeRouteTablesWithContext(ctx, &ec2.DescribeRouteTablesInput{
+		Filters: filters,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "describe route table")
+	}
+	if len(outDesc.RouteTables) > 0 {
+		return outDesc.RouteTables[0], nil
 	}
 	in := &ec2.CreateRouteTableInput{
 		VpcId: vpc.VpcId,
