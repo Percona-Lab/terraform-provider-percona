@@ -31,6 +31,7 @@ type Cloud struct {
 
 	configs   map[string]*resourceConfig
 	configsMu sync.Mutex
+	infraMu   sync.Mutex
 }
 
 type resourceConfig struct {

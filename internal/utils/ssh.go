@@ -78,11 +78,11 @@ func sshDialWithContext(ctx context.Context, network, addr string, config *ssh.C
 	d := net.Dialer{Timeout: config.Timeout}
 	conn, err := d.DialContext(ctx, network, addr)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "dial context")
 	}
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "new client conn")
 	}
 	return ssh.NewClient(c, chans, reqs), nil
 }
@@ -154,7 +154,7 @@ func createPrivateKey(keyPath string) (*rsa.PrivateKey, error) {
 		Bytes:   x509.MarshalPKCS1PrivateKey(privateKey),
 	}
 
-	if err = os.WriteFile(keyPath, pem.EncodeToMemory(pemBlock), 0400); err != nil {
+	if err = os.WriteFile(keyPath, pem.EncodeToMemory(pemBlock), 0600); err != nil {
 		return nil, errors.Wrap(err, "failed to write private key")
 	}
 	return privateKey, nil

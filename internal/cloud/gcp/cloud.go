@@ -45,6 +45,7 @@ type Cloud struct {
 
 	configs   map[string]*resourceConfig
 	configsMu sync.Mutex
+	infraMu   sync.Mutex
 }
 
 type resourceConfig struct {
@@ -387,6 +388,8 @@ func (c *Cloud) ListInstances(ctx context.Context, resourceID string, labels map
 }
 
 func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) error {
+	c.infraMu.Lock()
+
 	sshKeyPath, err := c.keyPairPath(resourceID)
 	if err != nil {
 		return errors.Wrap(err, "key pair path")
@@ -406,6 +409,8 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) err
 	if err = c.createFirewallIfNotExists(ctx, cfg.vpcName+"-allow-all", cfg.vpcName); err != nil {
 		return errors.Wrap(err, "failed to create firewall")
 	}
+
+	c.infraMu.Unlock()
 	return nil
 }
 

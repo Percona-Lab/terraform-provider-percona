@@ -101,6 +101,8 @@ func (c *Cloud) Credentials() (cloud.Credentials, error) {
 }
 
 func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) error {
+	c.infraMu.Lock()
+
 	if err := c.createKeyPair(ctx, resourceID); err != nil {
 		return err
 	}
@@ -132,6 +134,8 @@ func (c *Cloud) CreateInfrastructure(ctx context.Context, resourceID string) err
 
 	c.config(resourceID).securityGroupID = securityGroupId
 	c.config(resourceID).subnetID = subnet.SubnetId
+
+	c.infraMu.Unlock()
 	return nil
 }
 
@@ -463,7 +467,11 @@ func (c *Cloud) createOrGetRouteTable(ctx context.Context, vpc *ec2.Vpc, gateway
 	filters := []*ec2.Filter{{
 		Name:   aws.String("vpc-id"),
 		Values: []*string{vpc.VpcId},
-	}}
+	}, {
+		Name:   aws.String("route.destination-cidr-block"),
+		Values: []*string{aws.String(cloud.AllAddressesCidrBlock)},
+	},
+	}
 	if vpcName := vpcName(vpc); vpcName != "" {
 		name = vpcName + "-rtb"
 		filters = append(filters, &ec2.Filter{
