@@ -6,7 +6,6 @@ import (
 	"io"
 	"path"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -105,7 +104,7 @@ func (c *Cloud) EditFile(ctx context.Context, resourceID string, instance cloud.
 
 func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int64, labels map[string]string) ([]cloud.Instance, error) {
 	labels = utils.MapMerge(labels, map[string]string{
-		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+		resource.LabelKeyResourceID: resourceID,
 	})
 
 	instanceIds := make([]*string, 0, size)
@@ -172,7 +171,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 
 func (c *Cloud) ListInstances(ctx context.Context, resourceID string, labels map[string]string) ([]cloud.Instance, error) {
 	labels = utils.MapMerge(labels, map[string]string{
-		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+		resource.LabelKeyResourceID: resourceID,
 	})
 
 	filters := make([]*ec2.Filter, 0, len(labels))

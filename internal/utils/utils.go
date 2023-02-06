@@ -26,7 +26,7 @@ func getRandomString(n int) string {
 }
 
 func GenerateResourceID() string {
-	return getRandomString(20)
+	return strings.ToLower(getRandomString(20))
 }
 
 func MergeSchemas(schemas ...map[string]*schema.Schema) map[string]*schema.Schema {

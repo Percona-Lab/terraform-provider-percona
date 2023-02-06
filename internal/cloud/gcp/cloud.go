@@ -221,7 +221,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 	}
 
 	labels = utils.MapMerge(labels, map[string]string{
-		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+		resource.LabelKeyResourceID: resourceID,
 	})
 
 	op, err := c.client.Instances.BulkInsert(ctx, &computepb.BulkInsertInstanceRequest{
@@ -290,7 +290,7 @@ func (c *Cloud) CreateInstances(ctx context.Context, resourceID string, size int
 }
 
 func instanceNamePattern(resourceID string) string {
-	return strings.ToLower(fmt.Sprintf("instance-%s-#", resourceID))
+	return fmt.Sprintf("instance-%s-#", resourceID)
 }
 
 func (c *Cloud) waitUntilAllInstancesAreReady(ctx context.Context, resourceID string, labels map[string]string) error {
@@ -334,7 +334,7 @@ func (c *Cloud) listInstances(ctx context.Context, resourceID string, labels map
 	var instances []*computepb.Instance
 
 	labels = utils.MapMerge(labels, map[string]string{
-		resource.LabelKeyResourceID: strings.ToLower(resourceID),
+		resource.LabelKeyResourceID: resourceID,
 	})
 
 	var fb strings.Builder
