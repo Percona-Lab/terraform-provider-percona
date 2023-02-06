@@ -10,6 +10,9 @@ setup-dir:
 build:
 	go build -ldflags="-X 'terraform-percona/internal/version.Version=$(VERSION)'" -gcflags="all=-N -l" -o terraform-provider-percona && cp terraform-provider-percona $(PROVIDER_DIR)
 
+build-dev:
+	go build -race -ldflags="-X 'terraform-percona/internal/version.Version=$(VERSION)'" -gcflags="all=-N -l" -o terraform-provider-percona && cp terraform-provider-percona $(PROVIDER_DIR)
+
 init-dir:
 	terraform init
 

@@ -27,14 +27,15 @@ func toTerraformResource(resource Resource) *schema.Resource {
 			if !ok {
 				return diag.Errorf("failed to get cloud controller")
 			}
+
 			createDiag := resource.Create(ctx, data, c)
-			go func() {
-				if data.Id() != "" && !c.Metadata().DisableTelemetry {
-					if err := metrics.SendTelemetry(resource.Name(), resource.Schema(), data); err != nil {
-						tflog.Error(ctx, "failed to send telemetry", map[string]interface{}{"error": err})
-					}
+
+			if data.Id() != "" && !c.Metadata().DisableTelemetry {
+				if err := metrics.SendTelemetry(resource.Name(), resource.Schema(), data); err != nil {
+					tflog.Error(ctx, "failed to send telemetry", map[string]interface{}{"error": err})
 				}
-			}()
+			}
+
 			return createDiag
 		},
 		ReadContext: func(ctx context.Context, data *schema.ResourceData, meta interface{}) diag.Diagnostics {
