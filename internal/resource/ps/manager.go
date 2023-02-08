@@ -344,7 +344,7 @@ func (m *manager) instanceConfig(ctx context.Context, instance cloud.Instance, i
 			"enforce-gtid-consistency": "ON",
 		}
 		if serverID == 1 {
-			cfg["bind-address"] = instance.PrivateIpAddress
+			cfg["bind-address"] = strings.Join([]string{instance.PrivateIpAddress, "localhost"}, ",")
 		}
 		return cfg
 	case replicationTypeGR:
@@ -390,7 +390,7 @@ func (m *manager) setupInstances(ctx context.Context, instances []cloud.Instance
 	}
 	for _, instance := range instances {
 		if m.pmmAddress != "" {
-			_, err := m.runCommand(ctx, instance, cmd.AddServiceToPMM("pmm", m.pmmPassword, m.port))
+			_, err := m.runCommand(ctx, instance, cmd.AddServiceToPMM(m.pmmPassword, m.port))
 			if err != nil {
 				return errors.Wrap(err, "add service to pmm")
 			}

@@ -137,7 +137,7 @@ func (m *manager) Create(ctx context.Context) ([]cloud.Instance, error) {
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to edit default cfg for pmm")
 			}
-			_, err = m.runCommand(ctx, instance, cmd.AddServiceToPMM("pmm", m.pmmPassword, m.mysqlPort))
+			_, err = m.runCommand(ctx, instance, cmd.AddServiceToPMM(m.pmmPassword, m.mysqlPort))
 			if err != nil {
 				return nil, errors.Wrap(err, "add service to pmm")
 			}
@@ -172,6 +172,16 @@ func (m *manager) installPXC(ctx context.Context, instance cloud.Instance, clust
 	_, err = m.runCommand(ctx, instance, cmd.InstallPerconaXtraDBCluster(m.version))
 	if err != nil {
 		return errors.Wrap(err, "failed to run pxc install cmd")
+	}
+	if _, err = m.cloud.RunCommand(ctx, m.resourceID, instance, cmd.Start(false)); err != nil {
+		return errors.Wrap(err, "pxc start")
+	}
+	_, err = m.cloud.RunCommand(ctx, m.resourceID, instance, cmd.FixRootUser(m.password))
+	if err != nil {
+		return errors.Wrap(err, "pxc fix root user")
+	}
+	if _, err = m.cloud.RunCommand(ctx, m.resourceID, instance, cmd.Stop(false)); err != nil {
+		return errors.Wrap(err, "pxc stop")
 	}
 	err = m.editDefaultCfg(ctx, instance, "mysqld", map[string]string{
 		"port":                        strconv.Itoa(m.mysqlPort),

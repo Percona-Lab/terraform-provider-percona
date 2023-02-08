@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"terraform-percona/internal/db"
 )
 
 func Restart() string {
@@ -115,6 +116,6 @@ func InstallPMMClient(addr string) string {
 	sudo pmm-admin config --server-insecure-tls --server-url="%s"`, addr)
 }
 
-func AddServiceToPMM(username, password string, port int) string {
-	return fmt.Sprintf(`pmm-admin add mysql --query-source=slowlog --username="%s" --password="%s" --port=%d`, username, password, port)
+func AddServiceToPMM(password string, port int) string {
+	return fmt.Sprintf(`pmm-admin add mysql --query-source=slowlog --username="%s" --password="%s" --port=%d`, db.UserPMM, password, port)
 }

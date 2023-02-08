@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"terraform-percona/internal/db"
 )
 
 func RetrieveVersions() string {
@@ -43,6 +44,10 @@ func Start(bootstrap bool) string {
 	return "sudo systemctl start mysql"
 }
 
+func FixRootUser(rootPassword string) string {
+	return fmt.Sprintf(`mysql -uroot -p%s -e "RENAME USER 'root'@'localhost' TO 'root'@'%%';FLUSH PRIVILEGES;"`, rootPassword)
+}
+
 func Stop(bootstrap bool) string {
 	if bootstrap {
 		return "sudo systemctl stop mysql@bootstrap.service"
@@ -59,6 +64,6 @@ func InstallPMMClient(addr string) string {
 	sudo pmm-admin config --server-insecure-tls --server-url="%s"`, addr)
 }
 
-func AddServiceToPMM(username, password string, port int) string {
-	return fmt.Sprintf(`pmm-admin add mysql --query-source=slowlog --username="%s" --password="%s" --port=%d`, username, password, port)
+func AddServiceToPMM(password string, port int) string {
+	return fmt.Sprintf(`pmm-admin add mysql --query-source=slowlog --username="%s" --password="%s" --port=%d`, db.UserPMM, password, port)
 }
