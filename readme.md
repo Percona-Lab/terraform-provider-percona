@@ -123,7 +123,7 @@ File **version.tf**
 terraform {
   required_providers {
     percona = {
-      version = "~> 0.9.0"
+      version = "~> 0.9.10"
       source  = "terraform-percona.com/terraform-percona/percona"
     }
   }
