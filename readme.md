@@ -1,7 +1,7 @@
-Percona Terraform Provider
-=========================
+# Percona Terraform Provider
 
 ### DISCLAIMER
+
 This is an experimental project, use on your own risk. This project is not covered by Percona Support
 
 ## Requirements
@@ -9,6 +9,7 @@ This is an experimental project, use on your own risk. This project is not cover
 - [Terraform](https://www.terraform.io/downloads.html) 1.1.2
 - [Go](https://golang.org/doc/install) 1.18.x (to build the provider plugin)
 - [AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) 1 or 2 version
+
 ## How to run on AWS
 
 1. Clone repo
@@ -22,6 +23,7 @@ This is an experimental project, use on your own risk. This project is not cover
 9. Check replication status using `SHOW SLAVE STATUS\G` on replica
 
 ## How to run on Google Cloud Platform
+
 1. Create service account in Google Cloud Console and create key for it (for more info, visit https://cloud.google.com/docs/authentication/getting-started)
 2. Export `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to the file with credentials (e.g. `export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json`)
 3. Execute `make all`
@@ -131,11 +133,44 @@ terraform {
 ```
 
 ## Required permissions
+
 <details>
 <summary>For AWS</summary>
 
+AWS managed policie: AmazonEC2ContainerServiceAutoscaleRole
+
+```bash
+//AmazonEC2ContainerServiceAutoscaleRole
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ecs:DescribeServices",
+                "ecs:UpdateService"
+            ],
+            "Resource": [
+                "*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:DescribeAlarms",
+                "cloudwatch:PutMetricAlarm"
+            ],
+            "Resource": [
+                "*"
+            ]
+        }
+    ]
+}
 ```
-//Custom policies set
+
+Custom AWS policie
+
+```bash
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -208,40 +243,12 @@ terraform {
                 "ec2:DescribeVpcAttribute",
                 "ec2:DeleteNetworkInterface",
                 "ec2:DeleteSecurityGroup",
-                "ec2:ModifyNetworkInterfaceAttribute",
+                "ec2:ModifyNetworkInterfaceAttribute"
             ],
             "Resource": "*"
         }
     ]
 }
-
-//AmazonEC2ContainerServiceAutoscaleRole
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ecs:DescribeServices",
-                "ecs:UpdateService"
-            ],
-            "Resource": [
-                "*"
-            ]
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "cloudwatch:DescribeAlarms",
-                "cloudwatch:PutMetricAlarm"
-            ],
-            "Resource": [
-                "*"
-            ]
-        }
-    ]
-}
-
 ```
 
 </details>
