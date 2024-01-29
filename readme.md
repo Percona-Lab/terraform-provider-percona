@@ -137,7 +137,7 @@ terraform {
 <details>
 <summary>For AWS</summary>
 
-AWS managed policie: AmazonEC2ContainerServiceAutoscaleRole
+AWS managed policy: AmazonEC2ContainerServiceAutoscaleRole
 
 ```bash
 //AmazonEC2ContainerServiceAutoscaleRole
@@ -168,7 +168,7 @@ AWS managed policie: AmazonEC2ContainerServiceAutoscaleRole
 }
 ```
 
-Custom AWS policie
+Custom AWS Policy
 
 ```bash
 {
